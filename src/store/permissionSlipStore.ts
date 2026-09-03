@@ -41,9 +41,12 @@ import {
 export interface AgentFacade {
   getIntakeRequirements: () => IntakeRequirements
   draftIntake: (input: unknown) => OperationResult<DraftIntakeResult>
-  prepareSubmissionReview: () => Promise<OperationResult<PreparedReviewResult>>
+  prepareSubmissionReview: (
+    signal?: AbortSignal,
+  ) => Promise<OperationResult<PreparedReviewResult>>
   submitApprovedIntake: (
     reviewId: unknown,
+    signal?: AbortSignal,
   ) => Promise<OperationResult<SubmissionResult>>
   getDisclosureReceipt: (receiptId?: unknown) => OperationResult<DisclosureReceipt>
 }
@@ -110,9 +113,10 @@ export class PermissionSlipStore {
         this.commit(
           replaceDraftFromAgent(this.state, input, this.dependencies),
         ),
-      prepareSubmissionReview: () => this.prepareReview('agent'),
-      submitApprovedIntake: (reviewId: unknown) =>
-        this.submit(reviewId, 'agent'),
+      prepareSubmissionReview: (signal?: AbortSignal) =>
+        this.prepareReview('agent', signal),
+      submitApprovedIntake: (reviewId: unknown, signal?: AbortSignal) =>
+        this.submit(reviewId, 'agent', signal),
       getDisclosureReceipt: (receiptId?: unknown) =>
         getDisclosureReceipt(this.state, receiptId),
     })
@@ -167,13 +171,16 @@ export class PermissionSlipStore {
 
   private async prepareReview(
     actor: 'agent' | 'human',
+    signal?: AbortSignal,
   ): Promise<OperationResult<PreparedReviewResult>> {
+    if (signal?.aborted) throw signal.reason
     const startingState = this.state
     const result = await prepareSubmissionReview(
       startingState,
       actor,
       this.dependencies,
     )
+    if (signal?.aborted) throw signal.reason
     if (this.state !== startingState) {
       return this.commit(
         rejectStaleAsyncOperation(
@@ -190,7 +197,9 @@ export class PermissionSlipStore {
   private async submit(
     reviewId: unknown,
     actor: 'agent' | 'human',
+    signal?: AbortSignal,
   ): Promise<OperationResult<SubmissionResult>> {
+    if (signal?.aborted) throw signal.reason
     const startingState = this.state
     const result = await submitApprovedIntake(
       startingState,
@@ -198,6 +207,7 @@ export class PermissionSlipStore {
       actor,
       this.dependencies,
     )
+    if (signal?.aborted) throw signal.reason
     if (this.state !== startingState) {
       return this.commit(
         rejectStaleAsyncOperation(

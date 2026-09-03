@@ -10,7 +10,7 @@ Deadline: September 3, 2026 at 4:00 PM Eastern.
 - [x] Run the capped top-level WebMCP compatibility probe.
 - [x] Implement and test the consent state machine and persistence.
 - [ ] Build the complete responsive human workflow.
-- [ ] Register and test the five WebMCP tools.
+- [x] Register and test the five WebMCP tools.
 - [ ] Add CI, README, submission copy, and MIT license.
 - [ ] Pass typecheck, lint, tests, build, and final diff review.
 - [ ] With separate authorization: push, deploy, test the live app, record the video, and submit to Devpost.
@@ -35,3 +35,10 @@ Deadline: September 3, 2026 at 4:00 PM Eastern.
 - Domain and store verification: 21 focused tests cover atomic disclosure gating,
   snapshot review, approval invalidation, receipts, reset, persistence recovery,
   and stale asynchronous operations.
+- The completed in-app-browser path discovered all five tools, rejected an
+  unauthorized phone atomically, drafted visibly, froze a review, blocked an
+  unapproved submit, accepted visible human approval, submitted, and read the
+  receipt. The current browser build omitted invocation options, so handlers use
+  its absence-safe fallback while preserving supplied cancellation signals.
+- A Chrome DevTools Protocol `Network.requestWillBeSent` trace observed zero
+  requests during the successful simulated submission.

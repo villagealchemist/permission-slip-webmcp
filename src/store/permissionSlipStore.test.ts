@@ -189,6 +189,31 @@ describe('PermissionSlipStore', () => {
     )
   })
 
+  it('does not commit an agent review after its invocation is aborted', async () => {
+    let resolveDigest: ((value: string) => void) | undefined
+    const digest = () =>
+      new Promise<string>((resolve) => {
+        resolveDigest = resolve
+      })
+    const store = new PermissionSlipStore({
+      storage: null,
+      dependencies: deterministicDependencies(digest),
+    })
+    store.agent.draftIntake(validDraft)
+    const invocation = new AbortController()
+
+    const pendingReview = store.agent.prepareSubmissionReview(invocation.signal)
+    invocation.abort()
+    resolveDigest?.('digest_after_abort')
+
+    await expect(pendingReview).rejects.toMatchObject({ name: 'AbortError' })
+    expect(store.getSnapshot()).toMatchObject({
+      status: 'draft',
+      review: null,
+      approval: null,
+    })
+  })
+
   it('clears state, provenance, receipt data, and persistence on human reset', async () => {
     const storage = new MemoryStorage()
     const store = new PermissionSlipStore({
