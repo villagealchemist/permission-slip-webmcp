@@ -8,7 +8,7 @@ Deadline: September 3, 2026 at 4:00 PM Eastern.
 - [x] Decide the domain, store, WebMCP, UI, testing, and release architecture.
 - [x] Scaffold strict Vite, React, TypeScript, Vitest, and ESLint tooling.
 - [x] Run the capped top-level WebMCP compatibility probe.
-- [ ] Implement and test the consent state machine and persistence.
+- [x] Implement and test the consent state machine and persistence.
 - [ ] Build the complete responsive human workflow.
 - [ ] Register and test the five WebMCP tools.
 - [ ] Add CI, README, submission copy, and MIT license.
@@ -32,3 +32,6 @@ Deadline: September 3, 2026 at 4:00 PM Eastern.
   requires the deployed-site test described in `SUBMISSION.md`.
 - No restrictive Content Security Policy will be introduced before deployed WebMCP
   compatibility is proven.
+- Domain and store verification: 21 focused tests cover atomic disclosure gating,
+  snapshot review, approval invalidation, receipts, reset, persistence recovery,
+  and stale asynchronous operations.
