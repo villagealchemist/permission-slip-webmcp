@@ -9,7 +9,7 @@ Deadline: September 3, 2026 at 4:00 PM Eastern.
 - [x] Scaffold strict Vite, React, TypeScript, Vitest, and ESLint tooling.
 - [x] Run the capped top-level WebMCP compatibility probe.
 - [x] Implement and test the consent state machine and persistence.
-- [ ] Build the complete responsive human workflow.
+- [x] Build the complete responsive human workflow.
 - [x] Register and test the five WebMCP tools.
 - [ ] Add CI, README, submission copy, and MIT license.
 - [ ] Pass typecheck, lint, tests, build, and final diff review.
