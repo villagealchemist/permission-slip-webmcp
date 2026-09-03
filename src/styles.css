@@ -143,6 +143,17 @@ h4 {
   text-align: right;
 }
 
+.contract-link {
+  color: var(--paper-muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+  text-underline-offset: 0.22rem;
+}
+
+.contract-link:hover {
+  color: var(--violet-bright);
+}
+
 .status-pill {
   display: inline-flex;
   gap: 0.48rem;

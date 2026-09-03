@@ -16,12 +16,14 @@ const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PHONE_PATTERN = /^[0-9+().\-\s]{7,40}$/
 
+/** Fully normalized agent proposal accepted as one atomic replacement. */
 export interface AgentDraftValidationSuccess {
   ok: true
   draft: DisclosureSnapshot
   suppliedFields: IntakeFieldName[]
 }
 
+/** Rejection classification used to distinguish consent from shape failures. */
 export interface AgentDraftValidationFailure {
   ok: false
   kind: 'invalid' | 'unauthorized' | 'unknown'
@@ -29,22 +31,26 @@ export interface AgentDraftValidationFailure {
   issues: ValidationIssue[]
 }
 
+/** Agent validation never returns a partially accepted draft. */
 export type AgentDraftValidation =
   | AgentDraftValidationSuccess
   | AgentDraftValidationFailure
 
+/** Completeness result used at both review creation and submission revalidation. */
 export interface CompleteDraftValidation {
   valid: boolean
   normalizedDraft?: DisclosureSnapshot
   issues: ValidationIssue[]
 }
 
+/** Type-safe incremental patch accepted from the human form. */
 export interface HumanPatchValidationSuccess {
   ok: true
   patch: IntakeDraft
   suppliedFields: IntakeFieldName[]
 }
 
+/** Human patch rejection leaves the existing draft untouched. */
 export interface HumanPatchValidationFailure {
   ok: false
   kind: 'invalid' | 'unknown'
@@ -52,6 +58,7 @@ export interface HumanPatchValidationFailure {
   issues: ValidationIssue[]
 }
 
+/** Human edits may be partial, but each supplied property is accepted atomically. */
 export type HumanPatchValidation =
   | HumanPatchValidationSuccess
   | HumanPatchValidationFailure
@@ -165,6 +172,11 @@ function normalizedValue(field: IntakeFieldName, value: unknown): string | numbe
     : (value as string).trim()
 }
 
+/**
+ * Validates an agent's complete replacement before any state mutation. Unknown
+ * or unauthorized optional fields reject the entire proposal so a caller
+ * cannot turn a consent violation into a silently accepted subset.
+ */
 export function validateAgentDraftInput(
   input: unknown,
   authorizations: OptionalDisclosureAuthorizations,
@@ -241,6 +253,10 @@ export function validateAgentDraftInput(
   }
 }
 
+/**
+ * Revalidates and normalizes the whole draft at trust boundaries. This keeps a
+ * persisted or incrementally edited value from bypassing review requirements.
+ */
 export function validateCompleteDraft(draft: IntakeDraft): CompleteDraftValidation {
   const issues: ValidationIssue[] = []
 
@@ -275,6 +291,10 @@ export function validateCompleteDraft(draft: IntakeDraft): CompleteDraftValidati
   return { valid: true, normalizedDraft, issues: [] }
 }
 
+/**
+ * Validates human editing types while allowing temporary incompleteness; an
+ * empty or undefined supplied value intentionally clears that field.
+ */
 export function validateHumanDraftPatch(input: unknown): HumanPatchValidation {
   if (!isRecord(input)) {
     return {
@@ -348,10 +368,12 @@ export function validateHumanDraftPatch(input: unknown): HumanPatchValidation {
     : { ok: true, patch, suppliedFields }
 }
 
+/** Runtime guard for values crossing storage and tool boundaries. */
 export function isIntakeFieldName(value: string): value is IntakeFieldName {
   return FIELD_NAME_SET.has(value)
 }
 
+/** Runtime guard for fields governed by explicit disclosure authorization. */
 export function isOptionalFieldName(value: string): value is OptionalFieldName {
   return OPTIONAL_FIELD_SET.has(value)
 }

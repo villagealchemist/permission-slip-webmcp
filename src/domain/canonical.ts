@@ -9,6 +9,7 @@ import {
   type OptionalFieldName,
 } from './types'
 
+/** Disclosure payload plus the policy decisions needed to explain it. */
 export interface DisclosureSnapshotDetails {
   snapshot: DisclosureSnapshot
   disclosedFields: IntakeFieldName[]
@@ -16,6 +17,10 @@ export interface DisclosureSnapshotDetails {
   withheldOptionalFields: OptionalFieldName[]
 }
 
+/**
+ * Applies authorization as a projection over a complete draft. Optional values
+ * may remain locally editable while still being absent from the disclosure.
+ */
 export function buildDisclosureSnapshot(
   completeDraft: DisclosureSnapshot,
   authorizations: OptionalDisclosureAuthorizations,
@@ -55,6 +60,10 @@ export function buildDisclosureSnapshot(
   }
 }
 
+/**
+ * Produces the single stable field ordering used for review comparison and
+ * digest input, avoiding object insertion-order differences across callers.
+ */
 export function canonicalSerialize(snapshot: DisclosureSnapshot): string {
   const orderedEntries = INTAKE_FIELD_NAMES.flatMap((field) => {
     const value = snapshot[field]
@@ -64,6 +73,10 @@ export function canonicalSerialize(snapshot: DisclosureSnapshot): string {
   return JSON.stringify(Object.fromEntries(orderedEntries))
 }
 
+/**
+ * Creates a consistency digest for the canonical review payload. The digest
+ * binds snapshots for comparison; it does not prove identity or secure storage.
+ */
 export async function sha256Digest(canonicalSnapshot: string): Promise<string> {
   if (!globalThis.crypto?.subtle) {
     throw new Error('Web Crypto is unavailable in this browser.')
@@ -76,6 +89,10 @@ export async function sha256Digest(canonicalSnapshot: string): Promise<string> {
   ).join('')
 }
 
+/**
+ * Reapplies current authorizations before comparing with a review, so a policy
+ * change invalidates approval even when the underlying draft values did not.
+ */
 export function hasSameDisclosure(
   draft: IntakeDraft,
   authorizations: OptionalDisclosureAuthorizations,

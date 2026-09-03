@@ -74,6 +74,11 @@ claim that general-purpose browser automation can never activate a visible contr
 The top-level page registers five tools through the imperative
 `document.modelContext.registerTool()` API:
 
+Their externally meaningful metadata, input and result schemas, examples, error
+codes, state transitions, human prerequisites, and privacy notes live in the
+canonical [`src/contracts`](./src/contracts) registry. Browser registration and
+the static [Contract Explorer](./docs.html) both project that same source.
+
 | Tool | Mode | Contract |
 | --- | --- | --- |
 | `get_intake_requirements` | Read | Returns required, optional, authorized, and never-collected fields plus workflow status and approval guidance. |
@@ -126,9 +131,11 @@ interface and WebMCP adapters one source of truth.
 ```text
 src/
 ├── components/      # Human-visible workflow and presentation
+├── contract-explorer/ # Static, human-readable contract reference
+├── contracts/       # Canonical WebMCP metadata, schemas, examples, and errors
 ├── domain/          # Types, validation, canonical snapshots, digest, state engine
 ├── store/           # Versioned local persistence and React subscription bridge
-├── webmcp/          # Tool schemas, adapters, and registration lifecycle
+├── webmcp/          # Runtime validation, adapters, and registration lifecycle
 ├── test/            # Shared browser-test setup
 ├── App.tsx          # One-page experience
 └── main.tsx         # Top-level application entry
@@ -138,6 +145,35 @@ Domain operations compute and validate a complete next state before the store
 commits it. Registered tool callbacks read from the current store rather than from
 a captured React render, avoiding stale state. An `AbortController` owns the
 registration lifecycle so hot reloads and teardown do not leave duplicate tools.
+
+## Developer documentation
+
+- [Contract Explorer](./docs.html) — polished static reference for all five
+  tools, human-only capabilities, workflow, disclosure model, failures, and
+  architecture. It is emitted as `dist/docs.html` by the normal build.
+- [Architecture](./docs/ARCHITECTURE.md) — dependency flow, state machine,
+  disclosure boundary, and ownership decisions.
+- [WebMCP guide](./docs/WEBMCP.md) — registration lifecycle, tool behavior,
+  errors, progressive enhancement, and compatibility notes.
+- [Privacy model](./docs/PRIVACY_MODEL.md) — collection classes, persistence,
+  threat boundaries, and the exact meaning of “no network transmission.”
+
+Run `npm run docs` to generate API reference HTML plus two deterministic
+machine-readable projections under `docs/generated/`. The following local links
+resolve after that command:
+
+- [`webmcp-contracts.json`](./docs/generated/webmcp-contracts.json) contains the
+  complete canonical registry projection.
+- [`openapi.json`](./docs/generated/openapi.json) is an OpenAPI 3.1
+  **documentation projection only**. Its paths
+  are synthetic, carry `x-network-endpoint: false`, and do not create or imply
+  HTTP routes.
+
+Generated documentation is intentionally ignored by Git; regenerate it from the
+reviewed TypeScript registry whenever needed. The existing hand-written boundary
+and domain validators remain defense-in-depth. The registry is the canonical
+externally published contract, while the validators enforce it and add
+authorization, normalization, and state checks at runtime.
 
 ## Run locally
 
@@ -161,6 +197,7 @@ Then open `http://127.0.0.1:5173/`.
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Start the Vite development server. |
+| `npm run docs` | Generate contract JSON, the OpenAPI documentation projection, and TypeDoc API HTML. |
 | `npm run typecheck` | Run the strict TypeScript project build without pretty output. |
 | `npm run lint` | Run ESLint across the repository. |
 | `npm run test` | Run the Vitest suite once. |

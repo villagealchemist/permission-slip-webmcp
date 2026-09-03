@@ -306,6 +306,9 @@ export function App({ store: suppliedStore }: AppProps = {}) {
             tone={submitted ? 'success' : state.status === 'empty' ? 'neutral' : 'active'}
           />
           <p className="tool-count">{webMcp.detail}</p>
+          <a className="contract-link" href="./docs.html">
+            Explore the contracts →
+          </a>
         </div>
       </header>
 

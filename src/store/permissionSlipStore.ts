@@ -39,6 +39,10 @@ import {
   type StorageLike,
 } from './persistence'
 
+/**
+ * Capabilities safe to expose to WebMCP. Approval, authorization changes, and
+ * reset are deliberately absent so an agent cannot acquire human authority.
+ */
 export interface AgentFacade {
   getIntakeRequirements: () => IntakeRequirements
   draftIntake: (input: unknown) => OperationResult<DraftIntakeResult>
@@ -52,6 +56,7 @@ export interface AgentFacade {
   getDisclosureReceipt: (receiptId?: unknown) => OperationResult<DisclosureReceipt>
 }
 
+/** Human UI capabilities, including the operations that establish consent. */
 export interface HumanFacade {
   updateDraft: (patch: unknown) => OperationResult<HumanDraftUpdateResult>
   setOptionalDisclosure: (
@@ -67,6 +72,7 @@ export interface HumanFacade {
   reset: () => OperationResult<ResetResult>
 }
 
+/** Store seams for deterministic tests, alternate storage, and explicit hydration. */
 export interface PermissionSlipStoreOptions {
   storage?: StorageLike | null
   storageKey?: string
@@ -74,7 +80,8 @@ export interface PermissionSlipStoreOptions {
   initialState?: PermissionSlipState
 }
 
-type Listener = () => void
+/** Callback notified after the store commits an authoritative state change. */
+export type PermissionSlipStoreListener = () => void
 
 function getBrowserStorage(): StorageLike | null {
   try {
@@ -93,9 +100,14 @@ function statesMatch(
   )
 }
 
+/**
+ * Coordinates one immutable state stream for the React UI and WebMCP tools.
+ * Domain operations remain authoritative; persistence and cross-tab sync cannot
+ * bypass their approval or revision invariants.
+ */
 export class PermissionSlipStore {
   private state: PermissionSlipState
-  private readonly listeners = new Set<Listener>()
+  private readonly listeners = new Set<PermissionSlipStoreListener>()
   private readonly storage: StorageLike | null
   private readonly storageKey: string
   private readonly dependencies: DomainDependencies
@@ -202,11 +214,14 @@ export class PermissionSlipStore {
     this.listenForStorageChanges()
   }
 
+  /** Current immutable snapshot for `useSyncExternalStore` consumers. */
   readonly getSnapshot = (): PermissionSlipState => this.state
 
+  /** Server-safe snapshot; browser persistence is intentionally not required. */
   readonly getServerSnapshot = (): PermissionSlipState => this.state
 
-  readonly subscribe = (listener: Listener): (() => void) => {
+  /** Subscribes to committed domain results and accepted storage synchronization. */
+  readonly subscribe = (listener: PermissionSlipStoreListener): (() => void) => {
     this.listeners.add(listener)
     return () => this.listeners.delete(listener)
   }
@@ -367,6 +382,10 @@ export class PermissionSlipStore {
 
 let defaultStore: PermissionSlipStore | undefined
 
+/**
+ * Lazily creates the application-wide store so tool registration and React
+ * rendering resolve the same live state rather than parallel instances.
+ */
 export function getDefaultPermissionSlipStore(): PermissionSlipStore {
   defaultStore ??= new PermissionSlipStore()
   return defaultStore

@@ -24,9 +24,12 @@ import {
   type WorkflowStatus,
 } from '../domain'
 
+/** Envelope version used to reject incompatible persisted representations. */
 export const PERSISTED_STATE_VERSION = 1
+/** Namespaced browser key for the single local workflow snapshot. */
 export const DEFAULT_STORAGE_KEY = 'permission-slip:state'
 
+/** Minimal storage contract keeps persistence testable and browser-optional. */
 export interface StorageLike {
   getItem(key: string): string | null
   setItem(key: string, value: string): void
@@ -38,6 +41,10 @@ interface PersistedEnvelope {
   state: PermissionSlipState
 }
 
+/**
+ * Distinguishes absence, malformed data, and environmental storage failure so
+ * the store can recover without treating localStorage as trusted input.
+ */
 export type PermissionSlipStorageReadResult =
   | { status: 'valid'; state: PermissionSlipState }
   | { status: 'missing' | 'invalid' | 'unavailable'; state: null }
@@ -408,6 +415,10 @@ function reviewMatchesCurrentDisclosure(
   )
 }
 
+/**
+ * Reconstructs state only when its shape and cross-field workflow invariants
+ * agree. Persisted JSON is untrusted; invalid snapshots are rejected wholesale.
+ */
 export function parsePermissionSlipState(value: unknown): PermissionSlipState | null {
   if (
     !isRecord(value) ||
@@ -500,6 +511,7 @@ export function parsePermissionSlipState(value: unknown): PermissionSlipState | 
     : null
 }
 
+/** Wraps state in a versioned envelope for explicit future migration decisions. */
 export function serializePermissionSlipState(state: PermissionSlipState): string {
   const envelope: PersistedEnvelope = {
     version: PERSISTED_STATE_VERSION,
@@ -508,6 +520,10 @@ export function serializePermissionSlipState(state: PermissionSlipState): string
   return JSON.stringify(envelope)
 }
 
+/**
+ * Convenience read for consumers that do not need to distinguish missing,
+ * invalid, and unavailable storage.
+ */
 export function loadPermissionSlipState(
   storage: StorageLike | null,
   key = DEFAULT_STORAGE_KEY,
@@ -516,6 +532,7 @@ export function loadPermissionSlipState(
   return result.status === 'valid' ? result.state : null
 }
 
+/** Reads and validates local state without throwing on denied or broken storage. */
 export function readPermissionSlipState(
   storage: StorageLike | null,
   key = DEFAULT_STORAGE_KEY,
@@ -549,6 +566,7 @@ export function readPermissionSlipState(
   }
 }
 
+/** Best-effort local persistence; `false` signals that memory remains authoritative. */
 export function savePermissionSlipState(
   storage: StorageLike | null,
   state: PermissionSlipState,
@@ -563,6 +581,7 @@ export function savePermissionSlipState(
   }
 }
 
+/** Best-effort removal used by reset and corrupt-state recovery. */
 export function clearPermissionSlipState(
   storage: StorageLike | null,
   key = DEFAULT_STORAGE_KEY,

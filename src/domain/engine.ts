@@ -64,12 +64,17 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value)
 }
 
+/**
+ * Recursively freezes snapshots before they cross the store boundary. Stable,
+ * immutable references let React and concurrent-operation guards detect change.
+ */
 export function freezePermissionSlipState(
   state: PermissionSlipState,
 ): PermissionSlipState {
   return deepFreeze(state)
 }
 
+/** Supplies browser defaults while permitting deterministic tests. */
 export function createDomainDependencies(
   overrides: Partial<DomainDependencies> = {},
 ): DomainDependencies {
@@ -81,6 +86,7 @@ export function createDomainDependencies(
   }
 }
 
+/** Creates the privacy-preserving baseline with all optional fields withheld. */
 export function createInitialState(): PermissionSlipState {
   return freezePermissionSlipState({
     stateVersion: 1,
@@ -201,6 +207,10 @@ function sameDraft(left: IntakeDraft, right: IntakeDraft): boolean {
   return INTAKE_FIELD_NAMES.every((field) => Object.is(left[field], right[field]))
 }
 
+/**
+ * Returns a defensive policy view for agents and UI consumers. Authorization is
+ * read from the live state so callers cannot rely on registration-time data.
+ */
 export function getIntakeRequirements(
   state: PermissionSlipState,
 ): IntakeRequirements {
@@ -219,6 +229,12 @@ export function getIntakeRequirements(
   }
 }
 
+/**
+ * Atomically replaces the agent-controlled draft after validating the complete
+ * proposal against current human authorizations. Existing unauthorized optional
+ * values remain local and are neither accepted from the agent nor disclosed
+ * while their authorization is off.
+ */
 export function replaceDraftFromAgent(
   state: PermissionSlipState,
   input: unknown,
@@ -329,6 +345,10 @@ export function replaceDraftFromAgent(
   })
 }
 
+/**
+ * Applies an incremental human edit. Any actual change advances the revision
+ * and invalidates the prior review and approval before returning.
+ */
 export function updateDraftFromHuman(
   state: PermissionSlipState,
   input: unknown,
@@ -419,6 +439,10 @@ export function updateDraftFromHuman(
   })
 }
 
+/**
+ * Changes optional disclosure policy exclusively through the human path. A
+ * policy change invalidates review/approval even if no draft value changed.
+ */
 export function setOptionalDisclosureFromHuman(
   state: PermissionSlipState,
   fieldInput: unknown,
@@ -499,6 +523,10 @@ export function setOptionalDisclosureFromHuman(
   })
 }
 
+/**
+ * Captures the currently authorized disclosure and computes its consistency
+ * digest. Preparing a review never grants approval or submission authority.
+ */
 export async function prepareSubmissionReview(
   state: PermissionSlipState,
   actor: 'agent' | 'human',
@@ -621,6 +649,10 @@ export async function prepareSubmissionReview(
   })
 }
 
+/**
+ * Records human approval only when ID, digest, and revision exactly match the
+ * visible pending review. No agent-facing facade exposes this operation.
+ */
 export function approveReviewFromHuman(
   state: PermissionSlipState,
   input: ApprovalInput,
@@ -733,6 +765,7 @@ export function approveReviewFromHuman(
   })
 }
 
+/** Returns to editing by discarding any review and approval binding. */
 export function returnToEditingFromHuman(
   state: PermissionSlipState,
   dependencies: DomainDependencies,
@@ -773,6 +806,10 @@ export function returnToEditingFromHuman(
   })
 }
 
+/**
+ * Revalidates draft, authorization projection, revision, review, approval, and
+ * digest before creating a local receipt. This operation performs no network I/O.
+ */
 export async function submitApprovedIntake(
   state: PermissionSlipState,
   reviewIdInput: unknown,
@@ -974,6 +1011,7 @@ export async function submitApprovedIntake(
   })
 }
 
+/** Reads a named receipt, or the latest one when no ID is supplied, without mutation. */
 export function getDisclosureReceipt(
   state: PermissionSlipState,
   receiptId?: unknown,
@@ -1013,11 +1051,16 @@ export function getDisclosureReceipt(
   return succeeded(state, receipt)
 }
 
+/** Creates a fresh empty workflow; only the human store facade exposes reset. */
 export function resetFromHuman(): OperationResult<ResetResult> {
   const state = createInitialState()
   return succeeded(state, { workflowStatus: 'empty', cleared: true })
 }
 
+/**
+ * Converts an async race into an auditable rejection rather than overwriting a
+ * newer state produced while digest work was in flight.
+ */
 export function rejectStaleAsyncOperation(
   state: PermissionSlipState,
   actor: 'agent' | 'human',
@@ -1037,6 +1080,7 @@ export function rejectStaleAsyncOperation(
   )
 }
 
+/** Produces value-free activity copy suitable for the visible audit trail. */
 export function activitySummary(activity: ActivityEntry): string {
   const actor = activity.actor === 'human' ? 'Human' : activity.actor === 'agent' ? 'Agent' : 'System'
   const result = activity.outcome === 'succeeded' ? 'completed' : 'rejected'

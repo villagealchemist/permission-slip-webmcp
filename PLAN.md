@@ -13,6 +13,11 @@ Deadline: September 3, 2026 at 4:00 PM Eastern.
 - [x] Register and test the five WebMCP tools.
 - [x] Add CI, README, submission copy, and MIT license.
 - [x] Pass typecheck, lint, tests, build, and final diff review.
+- [x] Baseline the green application before the focused contract pass.
+- [x] Centralize all five WebMCP contracts and project runtime registration from them.
+- [x] Add the static Contract Explorer and deterministic documentation generators.
+- [x] Document architecture, WebMCP behavior, privacy boundaries, and exported APIs.
+- [x] Re-run documentation, typecheck, lint, tests, build, visual smoke checks, and final diff review.
 - [ ] With separate authorization: push, deploy, test the live app, record the video, and submit to Devpost.
 
 ## Non-negotiable behavior

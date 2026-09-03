@@ -1,0 +1,17 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": [
+    "src/contracts/index.ts",
+    "src/domain/index.ts",
+    "src/store/index.ts",
+    "src/webmcp/index.ts"
+  ],
+  "entryPointStrategy": "expand",
+  "out": "docs/generated/api",
+  "exclude": ["**/*.test.ts", "**/*.test.tsx"],
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "categorizeByGroup": true,
+  "cleanOutputDir": true,
+  "readme": "none"
+}

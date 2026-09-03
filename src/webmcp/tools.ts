@@ -1,9 +1,9 @@
 import {
-  draftIntakeSchema,
-  emptyObjectSchema,
-  getDisclosureReceiptSchema,
-  submitApprovedIntakeSchema,
-} from './schemas'
+  WEBMCP_TOOL_CONTRACT_BY_NAME,
+  PERMISSION_SLIP_TOOL_NAMES,
+  type PermissionSlipToolName,
+  type ToolContract,
+} from '../contracts'
 import type {
   PermissionSlipWebMcpAdapter,
   PermissionSlipWebMcpAdapterProvider,
@@ -19,16 +19,7 @@ import {
   type ValidationResult,
 } from './validation'
 
-export const PERMISSION_SLIP_TOOL_NAMES = [
-  'get_intake_requirements',
-  'draft_intake',
-  'prepare_submission_review',
-  'submit_approved_intake',
-  'get_disclosure_receipt',
-] as const
-
-export type PermissionSlipToolName =
-  (typeof PERMISSION_SLIP_TOOL_NAMES)[number]
+export { PERMISSION_SLIP_TOOL_NAMES, type PermissionSlipToolName }
 
 type Validator<T> = (input: unknown) => ValidationResult<T>
 
@@ -103,80 +94,71 @@ function executeValidated<TInput, TOutput>(
   }
 }
 
+function registerContract<TInput, TOutput>(
+  contract: ToolContract<PermissionSlipToolName>,
+  getAdapter: PermissionSlipWebMcpAdapterProvider,
+  validate: Validator<TInput>,
+  invoke: (
+    adapter: PermissionSlipWebMcpAdapter,
+    input: TInput,
+    signal: AbortSignal,
+  ) => Promise<ToolResult<TOutput>> | ToolResult<TOutput>,
+): WebMCP.ModelContextTool {
+  return {
+    name: contract.name,
+    title: contract.title,
+    description: contract.description,
+    inputSchema: contract.inputSchema,
+    ...(contract.annotations ? { annotations: contract.annotations } : {}),
+    execute: executeValidated(getAdapter, validate, invoke),
+  }
+}
+
+/**
+ * Projects the canonical registry into native browser registrations and binds
+ * each definition to the existing validated live-store executor. Output schemas
+ * remain documentation metadata because the current registration type accepts
+ * only an input schema.
+ */
 export function createPermissionSlipTools(
   getAdapter: PermissionSlipWebMcpAdapterProvider,
 ): readonly WebMCP.ModelContextTool[] {
-  const getIntakeRequirements: WebMCP.ModelContextTool = {
-    name: 'get_intake_requirements',
-    title: 'Get intake requirements',
-    description:
-      'Read the required, optional, currently human-authorized, and never-collected intake fields plus workflow status. This does not change state. Submission always requires explicit human approval in the visible webpage.',
-    inputSchema: emptyObjectSchema,
-    annotations: { readOnlyHint: true },
-    execute: executeValidated(
-      getAdapter,
-      validateEmptyObject,
-      (adapter, _input, signal) =>
-        adapter.getIntakeRequirements({ signal }),
-    ),
-  }
+  const getIntakeRequirements = registerContract(
+    WEBMCP_TOOL_CONTRACT_BY_NAME.get_intake_requirements,
+    getAdapter,
+    validateEmptyObject,
+    (adapter, _input, signal) => adapter.getIntakeRequirements({ signal }),
+  )
 
-  const draftIntake: WebMCP.ModelContextTool = {
-    name: 'draft_intake',
-    title: 'Draft the intake',
-    description:
-      'Replace the visible intake with one complete proposed draft. The complete call is rejected if it is malformed, contains an unknown field, or includes an optional field the person has not authorized. A successful draft invalidates any older review or approval and never approves or submits.',
-    inputSchema: draftIntakeSchema,
-    execute: executeValidated(
-      getAdapter,
-      validateDraftIntake,
-      (adapter, input, signal) => adapter.draftIntake(input, { signal }),
-    ),
-  }
+  const draftIntake = registerContract(
+    WEBMCP_TOOL_CONTRACT_BY_NAME.draft_intake,
+    getAdapter,
+    validateDraftIntake,
+    (adapter, input, signal) => adapter.draftIntake(input, { signal }),
+  )
 
-  const prepareSubmissionReview: WebMCP.ModelContextTool = {
-    name: 'prepare_submission_review',
-    title: 'Prepare submission review',
-    description:
-      'Freeze the current valid draft into an exact disclosure review and digest shown in the webpage. This does not approve or submit it; the person must approve that exact review using the visible human-only control.',
-    inputSchema: emptyObjectSchema,
-    annotations: { untrustedContentHint: true },
-    execute: executeValidated(
-      getAdapter,
-      validateEmptyObject,
-      (adapter, _input, signal) =>
-        adapter.prepareSubmissionReview({ signal }),
-    ),
-  }
+  const prepareSubmissionReview = registerContract(
+    WEBMCP_TOOL_CONTRACT_BY_NAME.prepare_submission_review,
+    getAdapter,
+    validateEmptyObject,
+    (adapter, _input, signal) => adapter.prepareSubmissionReview({ signal }),
+  )
 
-  const submitApprovedIntake: WebMCP.ModelContextTool = {
-    name: 'submit_approved_intake',
-    title: 'Submit approved intake',
-    description:
-      'Consequential action: finalize only the exact unchanged review identified by reviewId after the person has explicitly approved it in the visible webpage. This hackathon demonstration creates a local disclosure receipt and transitions the workflow to submitted; it sends no network request. Calls without matching current human approval are rejected.',
-    inputSchema: submitApprovedIntakeSchema,
-    execute: executeValidated(
-      getAdapter,
-      validateSubmitApprovedIntake,
-      (adapter, input, signal) =>
-        adapter.submitApprovedIntake(input, { signal }),
-    ),
-  }
+  const submitApprovedIntake = registerContract(
+    WEBMCP_TOOL_CONTRACT_BY_NAME.submit_approved_intake,
+    getAdapter,
+    validateSubmitApprovedIntake,
+    (adapter, input, signal) =>
+      adapter.submitApprovedIntake(input, { signal }),
+  )
 
-  const getDisclosureReceipt: WebMCP.ModelContextTool = {
-    name: 'get_disclosure_receipt',
-    title: 'Get disclosure receipt',
-    description:
-      'Read a local disclosure receipt by receiptId, or read the latest receipt when receiptId is omitted. Returns exactly what was disclosed and withheld and confirms that no network transmission occurred. This does not change state.',
-    inputSchema: getDisclosureReceiptSchema,
-    annotations: { readOnlyHint: true, untrustedContentHint: true },
-    execute: executeValidated(
-      getAdapter,
-      validateGetDisclosureReceipt,
-      (adapter, input, signal) =>
-        adapter.getDisclosureReceipt(input, { signal }),
-    ),
-  }
+  const getDisclosureReceipt = registerContract(
+    WEBMCP_TOOL_CONTRACT_BY_NAME.get_disclosure_receipt,
+    getAdapter,
+    validateGetDisclosureReceipt,
+    (adapter, input, signal) =>
+      adapter.getDisclosureReceipt(input, { signal }),
+  )
 
   return [
     getIntakeRequirements,

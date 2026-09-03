@@ -54,6 +54,11 @@ function mapResult<TDomain, TTool>(
     : toolFailure(result.error)
 }
 
+/**
+ * Maps WebMCP's JSON contract onto the store's agent facade. Because this
+ * boundary cannot reach human-only methods, tool calls can prepare and submit
+ * approved work but cannot authorize fields, approve reviews, or reset state.
+ */
 export function createStoreWebMcpAdapter(
   store: PermissionSlipStore,
 ): PermissionSlipWebMcpAdapter {

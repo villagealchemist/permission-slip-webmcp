@@ -1,6 +1,7 @@
 import { createPermissionSlipTools } from './tools'
 import type { PermissionSlipWebMcpAdapterProvider } from './types'
 
+/** Injectable subset of `document.modelContext` used for progressive enhancement. */
 export interface WebMcpRegistrationTarget {
   registerTool(
     tool: WebMCP.ModelContextTool,
@@ -8,6 +9,7 @@ export interface WebMcpRegistrationTarget {
   ): Promise<void>
 }
 
+/** Observable registration lifecycle, including a non-fatal unsupported state. */
 export type WebMcpRegistrationPhase =
   | 'idle'
   | 'unsupported'
@@ -16,6 +18,7 @@ export type WebMcpRegistrationPhase =
   | 'error'
   | 'stopped'
 
+/** Copy-safe status published to the UI without exposing controller internals. */
 export interface WebMcpRegistrationStatus {
   phase: WebMcpRegistrationPhase
   supported: boolean
@@ -23,12 +26,17 @@ export interface WebMcpRegistrationStatus {
   error?: string
 }
 
+/**
+ * Idempotent registration lifecycle. Stopping invalidates in-flight work and
+ * aborts registrations created by the current run.
+ */
 export interface PermissionSlipWebMcpController {
   start(): Promise<WebMcpRegistrationStatus>
   stop(): void
   getStatus(): WebMcpRegistrationStatus
 }
 
+/** Dependencies and status observer for a registration controller instance. */
 export interface CreatePermissionSlipWebMcpControllerOptions {
   getAdapter: PermissionSlipWebMcpAdapterProvider
   /** Pass null to force the unsupported path. Omit to use document.modelContext. */
@@ -46,6 +54,11 @@ function registrationErrorMessage(error: unknown): string {
   return 'WebMCP tool registration failed.'
 }
 
+/**
+ * Registers the fixed tool set on the top-level native WebMCP context when
+ * available. Readiness is reported only after every registration resolves;
+ * unsupported browsers remain fully functional through the visible UI.
+ */
 export function createPermissionSlipWebMcpController(
   options: CreatePermissionSlipWebMcpControllerOptions,
 ): PermissionSlipWebMcpController {

@@ -5,6 +5,7 @@ import type {
   OptionalDisclosureAuthorizations,
 } from './types'
 
+/** Required-field policy exposed consistently to validation, UI, and tools. */
 export const REQUIRED_FIELD_DEFINITIONS = [
   {
     name: 'contactName',
@@ -57,6 +58,7 @@ export const REQUIRED_FIELD_DEFINITIONS = [
   | 'eventGoal'
 >[]
 
+/** Optional-field policy; every entry must remain gated by human authorization. */
 export const OPTIONAL_FIELD_DEFINITIONS = [
   {
     name: 'phone',
@@ -90,6 +92,7 @@ export const OPTIONAL_FIELD_DEFINITIONS = [
   'phone' | 'budgetRange' | 'socialHandle' | 'additionalNotes'
 >[]
 
+/** Lookup view of the ordered definitions without creating a second policy source. */
 export const FIELD_DEFINITIONS: Record<IntakeFieldName, FieldDefinition> =
   Object.fromEntries(
     [...REQUIRED_FIELD_DEFINITIONS, ...OPTIONAL_FIELD_DEFINITIONS].map(
@@ -97,6 +100,7 @@ export const FIELD_DEFINITIONS: Record<IntakeFieldName, FieldDefinition> =
     ),
   ) as Record<IntakeFieldName, FieldDefinition>
 
+/** Explicit collection exclusions and the product reason for each boundary. */
 export const NEVER_COLLECTED_DEFINITIONS = [
   {
     name: 'streetAddress',
@@ -125,6 +129,7 @@ export const NEVER_COLLECTED_DEFINITIONS = [
   },
 ] satisfies NeverCollectedDefinition[]
 
+/** Privacy-preserving default: no optional disclosure begins authorized. */
 export const EMPTY_OPTIONAL_AUTHORIZATIONS: OptionalDisclosureAuthorizations = {
   phone: false,
   budgetRange: false,
@@ -132,7 +137,9 @@ export const EMPTY_OPTIONAL_AUTHORIZATIONS: OptionalDisclosureAuthorizations = {
   additionalNotes: false,
 }
 
+/** Bounds local audit growth so persistence remains predictable. */
 export const ACTIVITY_LIMIT = 100
 
+/** Agent guidance that preserves the human-only approval boundary. */
 export const INTAKE_REQUIREMENTS_INSTRUCTIONS =
   'Prepare the intake using only required fields and currently authorized optional fields. Submission remains blocked until the human approves the exact review snapshot in the webpage.'

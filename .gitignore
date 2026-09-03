@@ -1,6 +1,7 @@
 node_modules/
 dist/
 coverage/
+docs/generated/
 .DS_Store
 *.local
 *.log
