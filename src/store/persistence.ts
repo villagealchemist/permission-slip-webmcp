@@ -38,6 +38,10 @@ interface PersistedEnvelope {
   state: PermissionSlipState
 }
 
+export type PermissionSlipStorageReadResult =
+  | { status: 'valid'; state: PermissionSlipState }
+  | { status: 'missing' | 'invalid' | 'unavailable'; state: null }
+
 const WORKFLOW_STATUSES = new Set<WorkflowStatus>([
   'empty',
   'draft',
@@ -508,22 +512,40 @@ export function loadPermissionSlipState(
   storage: StorageLike | null,
   key = DEFAULT_STORAGE_KEY,
 ): PermissionSlipState | null {
-  if (!storage) return null
+  const result = readPermissionSlipState(storage, key)
+  return result.status === 'valid' ? result.state : null
+}
+
+export function readPermissionSlipState(
+  storage: StorageLike | null,
+  key = DEFAULT_STORAGE_KEY,
+): PermissionSlipStorageReadResult {
+  if (!storage) return { status: 'unavailable', state: null }
+
+  let raw: string | null
+  try {
+    raw = storage.getItem(key)
+  } catch {
+    return { status: 'unavailable', state: null }
+  }
+
+  if (raw === null) return { status: 'missing', state: null }
 
   try {
-    const raw = storage.getItem(key)
-    if (!raw) return null
     const parsed: unknown = JSON.parse(raw)
     if (
       !isRecord(parsed) ||
       !hasOnlyKeys(parsed, ['version', 'state']) ||
       parsed.version !== PERSISTED_STATE_VERSION
     ) {
-      return null
+      return { status: 'invalid', state: null }
     }
-    return parsePermissionSlipState(parsed.state)
+    const state = parsePermissionSlipState(parsed.state)
+    return state
+      ? { status: 'valid', state }
+      : { status: 'invalid', state: null }
   } catch {
-    return null
+    return { status: 'invalid', state: null }
   }
 }
 

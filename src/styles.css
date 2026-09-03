@@ -58,6 +58,11 @@ a {
   outline: 3px solid var(--violet);
 }
 
+.panel--cream :focus-visible,
+.panel--violet :focus-visible {
+  outline-color: #6739d0;
+}
+
 button {
   cursor: pointer;
 }
@@ -414,6 +419,11 @@ h4 {
   border-color: rgb(162 63 80 / 40%);
   background: transparent;
   color: var(--danger);
+}
+
+.panel--dark .button--danger {
+  border-color: rgb(233 130 150 / 58%);
+  color: #e98296;
 }
 
 .panel--dark .button--quiet {

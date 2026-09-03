@@ -140,6 +140,7 @@ export function createPermissionSlipTools(
     description:
       'Freeze the current valid draft into an exact disclosure review and digest shown in the webpage. This does not approve or submit it; the person must approve that exact review using the visible human-only control.',
     inputSchema: emptyObjectSchema,
+    annotations: { untrustedContentHint: true },
     execute: executeValidated(
       getAdapter,
       validateEmptyObject,
@@ -168,7 +169,7 @@ export function createPermissionSlipTools(
     description:
       'Read a local disclosure receipt by receiptId, or read the latest receipt when receiptId is omitted. Returns exactly what was disclosed and withheld and confirms that no network transmission occurred. This does not change state.',
     inputSchema: getDisclosureReceiptSchema,
-    annotations: { readOnlyHint: true },
+    annotations: { readOnlyHint: true, untrustedContentHint: true },
     execute: executeValidated(
       getAdapter,
       validateGetDisclosureReceipt,

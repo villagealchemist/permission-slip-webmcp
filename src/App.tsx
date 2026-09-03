@@ -29,7 +29,7 @@ import {
 } from './webmcp'
 
 const DEMO_PROMPT =
-  'Help me prepare an inquiry for a 20-person creative coding and mentorship workshop on October 10, 2026. My name is Maya Chen and my email is maya.chen@example.com. The goal is to pair early-career developers with local mentors for a collaborative workshop. My phone is 215-555-0134, but use only information the site says is required or currently authorized. Prepare the inquiry for my review, but do not submit it until I approve the exact disclosure in the page.'
+  'Help me prepare an inquiry for a 20-person creative coding and mentorship workshop on October 10, 2026. The goal is to pair early-career developers with local mentors for a collaborative workshop. My name is Maya Chen and my email is maya.chen@example.com. My phone is 215-555-0134, but use only information the site says is required or currently authorized. Prepare the inquiry for my review, but do not submit it until I approve the exact disclosure in the page.'
 
 const FICTIONAL_DRAFT = {
   contactName: 'Maya Chen',
@@ -113,6 +113,17 @@ interface AppProps {
   store?: PermissionSlipStore
 }
 
+type FocusTarget =
+  | 'draft-heading'
+  | 'first-invalid-field'
+  | 'receipt-heading'
+  | 'review-heading'
+
+interface FocusRequest {
+  sequence: number
+  target: FocusTarget
+}
+
 export function App({ store: suppliedStore }: AppProps = {}) {
   const store = useMemo(
     () => suppliedStore ?? getDefaultPermissionSlipStore(),
@@ -124,6 +135,7 @@ export function App({ store: suppliedStore }: AppProps = {}) {
   const [busy, setBusy] = useState(false)
   const [showValidation, setShowValidation] = useState(false)
   const [notice, setNotice] = useState<string | null>(null)
+  const [focusRequest, setFocusRequest] = useState<FocusRequest | null>(null)
 
   useEffect(() => {
     const controller = createPermissionSlipWebMcpController({
@@ -139,6 +151,23 @@ export function App({ store: suppliedStore }: AppProps = {}) {
     const timeout = window.setTimeout(() => setNotice(null), 4200)
     return () => window.clearTimeout(timeout)
   }, [notice])
+
+  useEffect(() => {
+    if (!focusRequest) return
+
+    const target =
+      focusRequest.target === 'first-invalid-field'
+        ? (document.querySelector<HTMLElement>(
+            '[aria-invalid="true"]:not(:disabled)',
+          ) ?? document.getElementById('draft-heading'))
+        : document.getElementById(focusRequest.target)
+
+    target?.focus({ preventScroll: true })
+    target?.scrollIntoView?.({
+      block:
+        focusRequest.target === 'first-invalid-field' ? 'center' : 'start',
+    })
+  }, [focusRequest])
 
   const validation = validateCompleteDraft(state.draft)
   const validationErrors = Object.fromEntries(
@@ -157,6 +186,13 @@ export function App({ store: suppliedStore }: AppProps = {}) {
   const webMcp = webMcpPresentation(webMcpStatus)
   const currentStep = STEP_INDEX[state.status]
   const submitted = state.status === 'submitted'
+
+  function requestFocus(target: FocusTarget): void {
+    setFocusRequest((current) => ({
+      sequence: (current?.sequence ?? 0) + 1,
+      target,
+    }))
+  }
 
   function updateField(
     field: IntakeFieldName,
@@ -197,11 +233,12 @@ export function App({ store: suppliedStore }: AppProps = {}) {
     if (!result.ok) {
       setShowValidation(true)
       setNotice(result.error.message)
+      requestFocus('first-invalid-field')
       return
     }
     setShowValidation(false)
     setNotice('Exact disclosure frozen. Human approval is now required.')
-    document.getElementById('review')?.scrollIntoView?.({ block: 'start' })
+    requestFocus('review-heading')
   }
 
   function approveReview(): void {
@@ -215,6 +252,7 @@ export function App({ store: suppliedStore }: AppProps = {}) {
     setNotice(
       resultMessage(result, 'Approval recorded for this exact snapshot only.'),
     )
+    if (result.ok) requestFocus('review-heading')
   }
 
   function returnToEditing(): void {
@@ -225,7 +263,7 @@ export function App({ store: suppliedStore }: AppProps = {}) {
         'Review and approval cleared. The draft is editable again.',
       ),
     )
-    document.getElementById('draft')?.scrollIntoView?.({ block: 'start' })
+    if (result.ok) requestFocus('draft-heading')
   }
 
   async function submitLocally(): Promise<void> {
@@ -241,7 +279,7 @@ export function App({ store: suppliedStore }: AppProps = {}) {
       ),
     )
     if (result.ok) {
-      document.getElementById('receipt')?.scrollIntoView?.({ block: 'start' })
+      requestFocus('receipt-heading')
     }
   }
 
@@ -398,6 +436,7 @@ export function App({ store: suppliedStore }: AppProps = {}) {
               <div className="panel__body">
                 <SectionHeading
                   eyebrow="01 / Live intake"
+                  headingId="draft-heading"
                   title="One draft, shared visibly."
                   copy="Edit it yourself or let a site tool draft it. Labels show who last changed each populated field."
                   action={
@@ -412,7 +451,6 @@ export function App({ store: suppliedStore }: AppProps = {}) {
                   disabled={submitted || state.status === 'review_pending' || state.status === 'approved'}
                   draft={state.draft}
                   errors={validationErrors}
-                  key={`draft-${state.revision}`}
                   provenance={provenance}
                   onChange={updateField}
                 />

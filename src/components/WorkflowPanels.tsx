@@ -96,8 +96,14 @@ export function ReviewPanel({
   const required = currentReview.disclosedFields.filter(
     (field) => FIELD_DEFINITIONS[field].required,
   )
-  const optional = currentReview.disclosedFields.filter(
+  const optionalIncluded = currentReview.disclosedFields.filter(
     (field) => !FIELD_DEFINITIONS[field].required,
+  )
+  const authorizedWithoutValue = currentReview.authorizedOptionalFields.filter(
+    (field) => !optionalIncluded.includes(field),
+  )
+  const notAuthorized = currentReview.withheldOptionalFields.filter(
+    (field) => !currentReview.authorizedOptionalFields.includes(field),
   )
 
   function renderFields(fields: IntakeFieldName[]) {
@@ -122,6 +128,7 @@ export function ReviewPanel({
       <div className="panel__body">
         <SectionHeading
           eyebrow="02 / Exact disclosure"
+          headingId="review-heading"
           title={approval ? 'Approved snapshot' : 'Ready for your review'}
           copy="This frozen version—not a future edit—is the only version this approval can cover."
         />
@@ -135,20 +142,38 @@ export function ReviewPanel({
             {renderFields(required)}
           </div>
           <div className="review-group">
-            <h3>Authorized optional</h3>
-            {optional.length ? (
-              renderFields(optional)
+            <h3>Authorized and included</h3>
+            {optionalIncluded.length ? (
+              renderFields(optionalIncluded)
             ) : (
-              <p className="section-copy">None authorized for this snapshot.</p>
+              <p className="section-copy">
+                No optional values are included in this snapshot.
+              </p>
             )}
           </div>
           <div className="review-group">
-            <h3>Withheld</h3>
-            <ul className="requirements-list">
-              {currentReview.withheldOptionalFields.map((field) => (
-                <li key={field}>{fieldLabel(field)}</li>
-              ))}
-            </ul>
+            <h3>Authorized, no value</h3>
+            {authorizedWithoutValue.length ? (
+              <ul className="requirements-list">
+                {authorizedWithoutValue.map((field) => (
+                  <li key={field}>{fieldLabel(field)}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="section-copy">None.</p>
+            )}
+          </div>
+          <div className="review-group review-group--wide">
+            <h3>Withheld — not authorized</h3>
+            {notAuthorized.length ? (
+              <ul className="requirements-list">
+                {notAuthorized.map((field) => (
+                  <li key={field}>{fieldLabel(field)}</li>
+                ))}
+              </ul>
+            ) : (
+              <p className="section-copy">None.</p>
+            )}
           </div>
         </div>
         <div className="digest-block">
@@ -214,6 +239,7 @@ export function ReceiptPanel({ receipt }: ReceiptPanelProps) {
       <div className="panel__body">
         <SectionHeading
           eyebrow="03 / Disclosure receipt"
+          headingId="receipt-heading"
           title="A precise local record"
           copy="The receipt names what was disclosed, what stayed private, and the exact approved digest."
           action={<CopyButton label="Copy JSON" text={receiptJson} />}
@@ -253,14 +279,38 @@ interface ActivityPanelProps {
   activity: ActivityEntry[]
 }
 
-const ACTION_COPY: Record<ActivityEntry['action'], string> = {
-  draft_replaced: 'Replaced the complete intake draft.',
-  draft_updated: 'Updated draft fields.',
-  disclosure_changed: 'Changed an optional disclosure permission.',
-  review_prepared: 'Prepared and froze an exact disclosure review.',
-  review_approved: 'Approved the exact frozen review.',
-  returned_to_editing: 'Returned the workflow to editing.',
-  intake_submitted: 'Completed the local-only submission.',
+const ACTION_COPY: Record<
+  ActivityEntry['action'],
+  Record<ActivityEntry['outcome'], string>
+> = {
+  draft_replaced: {
+    succeeded: 'Replaced the complete intake draft.',
+    rejected: 'Draft replacement was rejected.',
+  },
+  draft_updated: {
+    succeeded: 'Updated draft fields.',
+    rejected: 'Draft update was rejected.',
+  },
+  disclosure_changed: {
+    succeeded: 'Changed an optional disclosure permission.',
+    rejected: 'Disclosure permission change was rejected.',
+  },
+  review_prepared: {
+    succeeded: 'Prepared and froze an exact disclosure review.',
+    rejected: 'Review preparation was rejected.',
+  },
+  review_approved: {
+    succeeded: 'Approved the exact frozen review.',
+    rejected: 'Review approval was rejected.',
+  },
+  returned_to_editing: {
+    succeeded: 'Returned the workflow to editing.',
+    rejected: 'Return to editing was rejected.',
+  },
+  intake_submitted: {
+    succeeded: 'Completed the local-only submission.',
+    rejected: 'Local submission was rejected.',
+  },
 }
 
 export function ActivityPanel({ activity }: ActivityPanelProps) {
@@ -291,7 +341,7 @@ export function ActivityPanel({ activity }: ActivityPanelProps) {
                   </time>
                 </div>
                 <p>
-                  {ACTION_COPY[entry.action]}
+                  {ACTION_COPY[entry.action][entry.outcome]}
                   {entry.fieldNames.length
                     ? ` ${entry.fieldNames.map(fieldLabel).join(', ')}.`
                     : ''}

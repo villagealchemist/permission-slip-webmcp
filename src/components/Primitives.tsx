@@ -28,6 +28,7 @@ interface SectionHeadingProps {
   title: string
   copy?: string
   action?: ReactNode
+  headingId?: string
 }
 
 export function SectionHeading({
@@ -35,12 +36,15 @@ export function SectionHeading({
   title,
   copy,
   action,
+  headingId,
 }: SectionHeadingProps) {
   return (
     <header className="section-heading">
       <div>
         <p className="eyebrow">{eyebrow}</p>
-        <h2>{title}</h2>
+        <h2 id={headingId} tabIndex={headingId ? -1 : undefined}>
+          {title}
+        </h2>
         {copy ? <p className="section-copy">{copy}</p> : null}
       </div>
       {action ? <div className="section-heading__action">{action}</div> : null}

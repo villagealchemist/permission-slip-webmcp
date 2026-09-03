@@ -20,16 +20,23 @@ const validDraft = {
 
 class MemoryStorage implements StorageLike {
   readonly values = new Map<string, string>()
+  throwOnSet = false
+  throwOnNextRemove = false
 
   getItem(key: string) {
     return this.values.get(key) ?? null
   }
 
   setItem(key: string, value: string) {
+    if (this.throwOnSet) throw new Error('quota')
     this.values.set(key, value)
   }
 
   removeItem(key: string) {
+    if (this.throwOnNextRemove) {
+      this.throwOnNextRemove = false
+      throw new Error('blocked')
+    }
     this.values.delete(key)
   }
 }
@@ -189,6 +196,54 @@ describe('PermissionSlipStore', () => {
     )
   })
 
+  it('resynchronizes shared storage before submission and rejects a cross-tab stale approval', async () => {
+    const storage = new MemoryStorage()
+    const firstTab = new PermissionSlipStore({
+      storage,
+      dependencies: deterministicDependencies(),
+    })
+    firstTab.agent.draftIntake(validDraft)
+    const prepared = await firstTab.agent.prepareSubmissionReview()
+    if (!prepared.ok) throw new Error('Expected review')
+
+    const secondTab = new PermissionSlipStore({
+      storage,
+      dependencies: deterministicDependencies(),
+    })
+    firstTab.human.approveReview({
+      reviewId: prepared.data.reviewId,
+      digest: prepared.data.digest,
+      revision: prepared.data.revision,
+    })
+    secondTab.human.updateDraft({
+      eventGoal: 'A valid changed goal saved from another open tab',
+    })
+
+    const submitted = await firstTab.agent.submitApprovedIntake(
+      prepared.data.reviewId,
+    )
+
+    expect(submitted.ok).toBe(false)
+    expect(firstTab.getSnapshot()).toMatchObject({
+      status: 'draft',
+      approval: null,
+      review: null,
+      draft: {
+        eventGoal: 'A valid changed goal saved from another open tab',
+      },
+      receipts: [],
+    })
+    expect(loadPermissionSlipState(storage)).toMatchObject({
+      status: 'draft',
+      approval: null,
+      review: null,
+      draft: {
+        eventGoal: 'A valid changed goal saved from another open tab',
+      },
+      receipts: [],
+    })
+  })
+
   it('does not commit an agent review after its invocation is aborted', async () => {
     let resolveDigest: ((value: string) => void) | undefined
     const digest = () =>
@@ -243,5 +298,73 @@ describe('PermissionSlipStore', () => {
       activity: [],
     })
     expect(storage.getItem(DEFAULT_STORAGE_KEY)).toBeNull()
+  })
+
+  it('removes the last durable review after a write failure while continuing safely in memory', async () => {
+    const storage = new MemoryStorage()
+    const store = new PermissionSlipStore({
+      storage,
+      dependencies: deterministicDependencies(),
+    })
+    store.agent.draftIntake(validDraft)
+    const prepared = await store.agent.prepareSubmissionReview()
+    if (!prepared.ok) throw new Error('Expected review')
+
+    storage.throwOnSet = true
+    const approved = store.human.approveReview({
+      reviewId: prepared.data.reviewId,
+      digest: prepared.data.digest,
+      revision: prepared.data.revision,
+    })
+
+    expect(approved.ok).toBe(true)
+    expect(store.getSnapshot().status).toBe('approved')
+    expect(storage.getItem(DEFAULT_STORAGE_KEY)).toBeNull()
+
+    const submitted = await store.agent.submitApprovedIntake(
+      prepared.data.reviewId,
+    )
+    expect(submitted.ok).toBe(true)
+    expect(store.getSnapshot().status).toBe('submitted')
+    expect(storage.getItem(DEFAULT_STORAGE_KEY)).toBeNull()
+
+    const reloaded = new PermissionSlipStore({
+      storage,
+      dependencies: deterministicDependencies(),
+    })
+    expect(reloaded.getSnapshot().status).toBe('empty')
+  })
+
+  it('overwrites stale persisted approval and receipt data when reset removal fails', async () => {
+    const storage = new MemoryStorage()
+    const store = new PermissionSlipStore({
+      storage,
+      dependencies: deterministicDependencies(),
+    })
+    store.agent.draftIntake(validDraft)
+    const prepared = await store.agent.prepareSubmissionReview()
+    if (!prepared.ok) throw new Error('Expected review')
+    store.human.approveReview({
+      reviewId: prepared.data.reviewId,
+      digest: prepared.data.digest,
+      revision: prepared.data.revision,
+    })
+    await store.agent.submitApprovedIntake(prepared.data.reviewId)
+
+    storage.throwOnNextRemove = true
+    const reset = store.human.reset()
+
+    expect(reset.ok).toBe(true)
+    expect(storage.getItem(DEFAULT_STORAGE_KEY)).not.toBeNull()
+    const reloaded = new PermissionSlipStore({
+      storage,
+      dependencies: deterministicDependencies(),
+    })
+    expect(reloaded.getSnapshot()).toMatchObject({
+      status: 'empty',
+      approval: null,
+      review: null,
+      receipts: [],
+    })
   })
 })

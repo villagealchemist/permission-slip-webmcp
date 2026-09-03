@@ -240,6 +240,15 @@ function validateIdentifier(
     pattern: identifierPattern,
     formatMessage: `Property "${key}" must use only letters, numbers, periods, underscores, and hyphens.`,
   })
+
+  const value = input[key]
+  if (typeof value === 'string' && value !== value.trim()) {
+    issues.push({
+      path: key,
+      code: 'invalid_format',
+      message: `Property "${key}" must not contain leading or trailing whitespace.`,
+    })
+  }
 }
 
 export function validateSubmitApprovedIntake(

@@ -164,9 +164,9 @@ describe('Permission Slip WebMCP registration', () => {
     ).toEqual(['get_intake_requirements', 'get_disclosure_receipt'])
     expect(
       registrations
-        .filter(({ tool }) => !tool.annotations?.readOnlyHint)
-        .every(({ tool }) => tool.annotations === undefined),
-    ).toBe(true)
+        .filter(({ tool }) => tool.annotations?.untrustedContentHint)
+        .map(({ tool }) => tool.name),
+    ).toEqual(['prepare_submission_review', 'get_disclosure_receipt'])
 
     const signals = registrations.map(({ options }) => options?.signal)
     expect(signals.every((signal) => signal === signals[0])).toBe(true)
@@ -233,6 +233,39 @@ describe('Permission Slip WebMCP registration', () => {
       },
     })
     expect(adapter.draftIntake).not.toHaveBeenCalled()
+  })
+
+  it('rejects identifiers with whitespace rather than silently normalizing them', async () => {
+    const adapter = createAdapter()
+    const { registrations, target } = createRegistrationTarget()
+    const controller = createPermissionSlipWebMcpController({
+      getAdapter: () => adapter,
+      modelContext: target,
+    })
+    await controller.start()
+
+    const submitTool = registrations.find(
+      ({ tool }) => tool.name === 'submit_approved_intake',
+    )?.tool
+    const receiptTool = registrations.find(
+      ({ tool }) => tool.name === 'get_disclosure_receipt',
+    )?.tool
+    const options = { signal: new AbortController().signal }
+
+    await expect(
+      submitTool?.execute({ reviewId: ' review-1 ' }, options),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'INVALID_INPUT' },
+    })
+    await expect(
+      receiptTool?.execute({ receiptId: ' receipt-1 ' }, options),
+    ).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'INVALID_INPUT' },
+    })
+    expect(adapter.submitApprovedIntake).not.toHaveBeenCalled()
+    expect(adapter.getDisclosureReceipt).not.toHaveBeenCalled()
   })
 
   it('resolves the live adapter and forwards the invocation AbortSignal', async () => {

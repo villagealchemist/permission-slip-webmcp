@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { OPTIONAL_FIELD_DEFINITIONS } from '../domain/constants'
 import type {
   IntakeDraft,
@@ -26,6 +27,26 @@ function provenanceLabel(
   return value === 'agent' ? 'Agent' : 'Human'
 }
 
+type IntakeFormBuffer = Record<IntakeFieldName, string>
+
+function bufferFromDraft(draft: IntakeDraft): IntakeFormBuffer {
+  return {
+    contactName: draft.contactName ?? '',
+    email: draft.email ?? '',
+    eventType: draft.eventType ?? '',
+    preferredDate: draft.preferredDate ?? '',
+    estimatedAttendeeCount:
+      draft.estimatedAttendeeCount === undefined
+        ? ''
+        : String(draft.estimatedAttendeeCount),
+    eventGoal: draft.eventGoal ?? '',
+    phone: draft.phone ?? '',
+    budgetRange: draft.budgetRange ?? '',
+    socialHandle: draft.socialHandle ?? '',
+    additionalNotes: draft.additionalNotes ?? '',
+  }
+}
+
 export function IntakeForm({
   draft,
   authorizations,
@@ -34,13 +55,42 @@ export function IntakeForm({
   disabled = false,
   onChange,
 }: IntakeFormProps) {
+  const [buffer, setBuffer] = useState<IntakeFormBuffer>(() =>
+    bufferFromDraft(draft),
+  )
+
+  useEffect(() => {
+    // WebMCP and preset updates arrive through the shared store, so refresh the
+    // local edit buffer when that canonical draft changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setBuffer(bufferFromDraft(draft))
+  }, [draft])
+
+  function updateBuffer(field: IntakeFieldName, value: string): void {
+    setBuffer((current) => ({ ...current, [field]: value }))
+  }
+
+  function commitText(field: IntakeFieldName, value: string): void {
+    onChange(field, value)
+  }
+
+  function commitAttendeeCount(rawValue: string): void {
+    onChange(
+      'estimatedAttendeeCount',
+      rawValue === '' ? undefined : Number(rawValue),
+    )
+  }
+
   const shared = (
     field: IntakeFieldName,
+    required: boolean,
     alwaysDescribed = false,
   ) => ({
     disabled,
     id: field,
     name: field,
+    required,
+    'aria-required': required,
     'aria-describedby':
       alwaysDescribed || errors[field] ? `${field}-message` : undefined,
     'aria-invalid': Boolean(errors[field]),
@@ -55,13 +105,14 @@ export function IntakeForm({
         provenance={provenanceLabel(provenance.contactName)}
       >
         <input
-          {...shared('contactName')}
+          {...shared('contactName', true)}
           autoComplete="name"
           maxLength={100}
           placeholder="Maya Chen"
           type="text"
-          defaultValue={draft.contactName ?? ''}
-          onBlur={(event) => onChange('contactName', event.target.value)}
+          value={buffer.contactName}
+          onBlur={(event) => commitText('contactName', event.currentTarget.value)}
+          onChange={(event) => updateBuffer('contactName', event.target.value)}
         />
       </FieldGroup>
 
@@ -72,14 +123,15 @@ export function IntakeForm({
         provenance={provenanceLabel(provenance.email)}
       >
         <input
-          {...shared('email')}
+          {...shared('email', true)}
           autoComplete="email"
           inputMode="email"
           maxLength={254}
           placeholder="maya.chen@example.com"
           type="email"
-          defaultValue={draft.email ?? ''}
-          onBlur={(event) => onChange('email', event.target.value)}
+          value={buffer.email}
+          onBlur={(event) => commitText('email', event.currentTarget.value)}
+          onChange={(event) => updateBuffer('email', event.target.value)}
         />
       </FieldGroup>
 
@@ -90,12 +142,13 @@ export function IntakeForm({
         provenance={provenanceLabel(provenance.eventType)}
       >
         <input
-          {...shared('eventType')}
+          {...shared('eventType', true)}
           maxLength={160}
           placeholder="Creative coding workshop"
           type="text"
-          defaultValue={draft.eventType ?? ''}
-          onBlur={(event) => onChange('eventType', event.target.value)}
+          value={buffer.eventType}
+          onBlur={(event) => commitText('eventType', event.currentTarget.value)}
+          onChange={(event) => updateBuffer('eventType', event.target.value)}
         />
       </FieldGroup>
 
@@ -106,10 +159,11 @@ export function IntakeForm({
         provenance={provenanceLabel(provenance.preferredDate)}
       >
         <input
-          {...shared('preferredDate')}
+          {...shared('preferredDate', true)}
           type="date"
-          defaultValue={draft.preferredDate ?? ''}
-          onBlur={(event) => onChange('preferredDate', event.target.value)}
+          value={buffer.preferredDate}
+          onBlur={(event) => commitText('preferredDate', event.currentTarget.value)}
+          onChange={(event) => updateBuffer('preferredDate', event.target.value)}
         />
       </FieldGroup>
 
@@ -120,20 +174,17 @@ export function IntakeForm({
         provenance={provenanceLabel(provenance.estimatedAttendeeCount)}
       >
         <input
-          {...shared('estimatedAttendeeCount')}
+          {...shared('estimatedAttendeeCount', true)}
           inputMode="numeric"
           max={1000}
           min={1}
           placeholder="20"
           type="number"
-          defaultValue={draft.estimatedAttendeeCount ?? ''}
-          onBlur={(event) => {
-            const rawValue = event.target.value
-            onChange(
-              'estimatedAttendeeCount',
-              rawValue === '' ? undefined : Number(rawValue),
-            )
-          }}
+          value={buffer.estimatedAttendeeCount}
+          onBlur={(event) => commitAttendeeCount(event.currentTarget.value)}
+          onChange={(event) =>
+            updateBuffer('estimatedAttendeeCount', event.target.value)
+          }
         />
       </FieldGroup>
 
@@ -145,11 +196,12 @@ export function IntakeForm({
           provenance={provenanceLabel(provenance.eventGoal)}
         >
           <textarea
-            {...shared('eventGoal')}
+            {...shared('eventGoal', true)}
             maxLength={1000}
             placeholder="What should this gathering make possible?"
-            defaultValue={draft.eventGoal ?? ''}
-            onBlur={(event) => onChange('eventGoal', event.target.value)}
+            value={buffer.eventGoal}
+            onBlur={(event) => commitText('eventGoal', event.currentTarget.value)}
+            onChange={(event) => updateBuffer('eventGoal', event.target.value)}
           />
         </FieldGroup>
       </div>
@@ -158,7 +210,7 @@ export function IntakeForm({
         const field = definition.name
         const authorized = authorizations[field]
         const common = {
-          ...shared(field, true),
+          ...shared(field, false, true),
           disabled: disabled || !authorized,
         }
         const hint = authorized
@@ -184,8 +236,9 @@ export function IntakeForm({
                     withheldPlaceholder ??
                     'Only context you intentionally choose to share'
                   }
-                  defaultValue={draft[field] ?? ''}
-                  onBlur={(event) => onChange(field, event.target.value)}
+                  value={buffer[field]}
+                  onBlur={(event) => commitText(field, event.currentTarget.value)}
+                  onChange={(event) => updateBuffer(field, event.target.value)}
                 />
               </FieldGroup>
             </div>
@@ -208,8 +261,9 @@ export function IntakeForm({
                 maxLength={120}
                 placeholder={withheldPlaceholder ?? 'For example, $1,000–$2,500'}
                 type="text"
-                defaultValue={draft[field] ?? ''}
-                onBlur={(event) => onChange(field, event.target.value)}
+                value={buffer[field]}
+                onBlur={(event) => commitText(field, event.currentTarget.value)}
+                onChange={(event) => updateBuffer(field, event.target.value)}
               />
             </FieldGroup>
           )
@@ -233,8 +287,9 @@ export function IntakeForm({
                 withheldPlaceholder ?? (field === 'phone' ? '215-555-0134' : '@maya')
               }
               type={field === 'phone' ? 'tel' : 'text'}
-              defaultValue={draft[field] ?? ''}
-              onBlur={(event) => onChange(field, event.target.value)}
+              value={buffer[field]}
+              onBlur={(event) => commitText(field, event.currentTarget.value)}
+              onChange={(event) => updateBuffer(field, event.target.value)}
             />
           </FieldGroup>
         )
