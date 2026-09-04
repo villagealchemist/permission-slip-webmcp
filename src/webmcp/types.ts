@@ -2,10 +2,17 @@ import {
   NEVER_COLLECTED_DEFINITIONS,
   OPTIONAL_FIELD_NAMES,
   REQUIRED_FIELD_NAMES,
-  type DisclosureSnapshot,
+  type ContactPermissionName,
+  type ContactPermissions,
+  type FailedSubmissionReceipt,
+  type FieldProvenance,
+  type InquiryProvenance,
+  type InquirySnapshot,
   type IntakeFieldName,
+  type OptionalDisclosureAuthorizations,
   type OptionalFieldName,
   type RequiredFieldName,
+  type SuccessfulSubmissionReceipt,
   type WorkflowStatus as DomainWorkflowStatus,
 } from '../domain'
 import type { ContractErrorCode } from '../contracts/defineContract'
@@ -18,16 +25,14 @@ export const OPTIONAL_INTAKE_FIELDS = OPTIONAL_FIELD_NAMES
 
 /** Human-readable collection exclusions returned to tool callers. */
 export const NEVER_COLLECTED_FIELDS = Object.freeze(
-  NEVER_COLLECTED_DEFINITIONS.map((definition) =>
-    definition.label.toLowerCase(),
-  ),
+  NEVER_COLLECTED_DEFINITIONS.map((definition) => definition.label),
 )
 
 /** Required input names exposed through WebMCP. */
 export type RequiredIntakeField = RequiredFieldName
 /** Consent-gated input names exposed through WebMCP. */
 export type OptionalIntakeField = OptionalFieldName
-/** Every accepted WebMCP intake property. */
+/** Every accepted WebMCP inquiry property. */
 export type IntakeField = IntakeFieldName
 
 /** Tool-facing alias of the authoritative domain workflow lifecycle. */
@@ -42,8 +47,8 @@ export interface JsonObject {
   [key: string]: JsonValue
 }
 
-/** Complete draft proposal; runtime policy still decides which optionals are allowed. */
-export type DraftIntakeInput = DisclosureSnapshot
+/** Complete proposed inquiry; runtime policy still gates every optional value. */
+export type DraftIntakeInput = InquirySnapshot
 
 /** Submission binds to the exact review previously returned to the caller. */
 export interface SubmitApprovedIntakeInput {
@@ -80,13 +85,38 @@ export interface ToolSuccess<T> {
 /** Discriminated result that keeps expected policy rejections out of exceptions. */
 export type ToolResult<T> = ToolSuccess<T> | ToolFailure
 
-/** Live collection policy returned before an agent constructs a draft. */
+/** Explicitly readable state for controls that no WebMCP tool may operate. */
+export interface HumanOnlyRequirementsOutput {
+  assistantSuggestionVerification: {
+    required: true
+    complete: boolean
+    unverifiedFields: IntakeField[]
+  }
+  requestedNextStepIntent: {
+    required: true
+    confirmed: boolean
+  }
+  projectResponsePermission: {
+    required: true
+    granted: boolean
+  }
+  exactReviewApproval: {
+    required: true
+    granted: boolean
+  }
+}
+
+/** Live collection policy and human-only prerequisite state. */
 export interface IntakeRequirementsOutput {
   requiredFields: RequiredIntakeField[]
   optionalFields: OptionalIntakeField[]
   authorizedOptionalFields: OptionalIntakeField[]
   neverCollectedFields: string[]
   workflowStatus: WorkflowStatus
+  nextStepIntentConfirmed: boolean
+  contactPermissions: ContactPermissions
+  unverifiedAssistantFields: IntakeField[]
+  humanOnlyRequirements: HumanOnlyRequirementsOutput
   instructions: string
 }
 
@@ -95,55 +125,57 @@ export interface DraftIntakeOutput {
   acceptedFields: IntakeField[]
   withheldFields: OptionalIntakeField[]
   workflowStatus: 'draft'
+  revision: number
   nextRecommendedAction: string
 }
 
-/** Exact values presented to the human and the optional categories omitted. */
-export interface SubmissionReviewSummary {
-  fieldsDisclosed: DisclosureSnapshot
-  optionalFieldsWithheld: OptionalIntakeField[]
-}
-
-/** Review binding plus an explicit reminder that approval remains human-only. */
+/** Review binding and the exact frozen payload offered to the person. */
 export interface PrepareSubmissionReviewOutput {
   reviewId: string
   digest: string
-  reviewSummary: SubmissionReviewSummary
+  revision: number
+  workflowStatus: 'review_pending'
+  frozenSnapshot: InquirySnapshot
+  disclosedFields: IntakeField[]
+  authorizedOptionalFields: OptionalIntakeField[]
+  withheldOptionalFields: OptionalIntakeField[]
+  optionalDisclosureAuthorizations: OptionalDisclosureAuthorizations
+  contactPermissions: ContactPermissions
+  permissionsGranted: ContactPermissionName[]
+  permissionsWithheld: ContactPermissionName[]
+  nextStepIntentConfirmed: true
+  inquiryProvenance: InquiryProvenance
+  fieldProvenance: Partial<Record<IntakeFieldName, FieldProvenance>>
   humanApprovalRequired: string
 }
 
-/** Confirmation of local simulated submission, linked to its receipt. */
+/** Confirmation of one local simulated submission, linked to its receipt. */
 export interface SubmitApprovedIntakeOutput {
   confirmation: string
+  submissionId: string
   receiptId: string
   reviewId: string
   workflowStatus: 'submitted'
+  idempotentReplay: boolean
 }
 
-/**
- * Portable record of the local simulation. `networkTransmissionOccurred` is a
- * behavior statement, not an identity or tamper-resistance guarantee.
- */
-export interface DisclosureReceiptOutput {
-  receiptId: string
-  reviewId: string
-  submissionTimestamp: string
-  fieldsDisclosed: DisclosureSnapshot
-  optionalFieldsWithheld: OptionalIntakeField[]
-  neverCollectedCategories: string[]
-  snapshotDigest: string
-  destination: 'Local demonstration only'
-  networkTransmissionOccurred: false
-  statement: string
-}
+/** Accepted receipts may contain the exact frozen inquiry values. */
+export type SuccessfulDisclosureReceiptOutput = SuccessfulSubmissionReceipt
+
+/** Rejected-attempt receipts intentionally contain no inquiry snapshot or values. */
+export type FailedDisclosureReceiptOutput = FailedSubmissionReceipt
+
+/** Durable local receipt union returned without widening either outcome. */
+export type DisclosureReceiptOutput =
+  | SuccessfulDisclosureReceiptOutput
+  | FailedDisclosureReceiptOutput
 
 /** Allows adapters to keep read operations synchronous without constraining async work. */
 export type MaybePromise<T> = T | Promise<T>
 
 /**
- * The application-facing boundary for WebMCP. Implementations should call the
- * same live store/domain operations as the visible UI; they must not cache a
- * snapshot of state when the tools are registered.
+ * Application-facing WebMCP boundary. Implementations call the same current
+ * store as the visible UI and deliberately omit all human-only operations.
  */
 export interface PermissionSlipWebMcpAdapter {
   getIntakeRequirements(

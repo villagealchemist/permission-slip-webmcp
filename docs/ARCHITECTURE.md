@@ -1,184 +1,159 @@
-# Architecture
+# Permission Slip inquiry workflow
 
-Permission Slip is a browser-only consent workflow. React and WebMCP are two
-entry points into one domain model and one store; neither entry point owns a
-parallel copy of the business rules.
+This document describes only the Village Alchemist project-inquiry demonstration
+implemented in this repository. It is not a specification for another product or
+business.
 
-There is no HTTP application API. Any generated OpenAPI document is an
-**OpenAPI 3.1 documentation projection of browser-native WebMCP contracts**, not
-a set of network endpoints.
+## One state stream
 
-## Layers and ownership
+The React interface and WebMCP tools operate on one `PermissionSlipStore`. Neither
+surface reimplements inquiry rules.
 
-| Layer | Responsibility |
+```text
+Visible React controls ─┐
+                       ├─> PermissionSlipStore ─> inquiry domain operations
+WebMCP tool handlers ──┘              │
+                                      └─> versioned localStorage
+```
+
+Responsibilities stay narrow:
+
+| Area | Responsibility |
 | --- | --- |
-| `src/contracts` | Framework-neutral tool metadata, JSON Schemas, workflow metadata, examples, errors, and disclosure declarations. This is the source used by runtime registration and generated reference material. |
-| `src/domain` | Intake types, validation, immutable state transitions, snapshot construction, canonical serialization, and digest checks. It has no React or WebMCP dependency. |
-| `src/store` | Owns the current immutable state, exposes separate human and agent facades, commits domain results, persists versioned state, and synchronizes browser tabs. |
-| `src/webmcp` | Projects canonical contracts into top-level `document.modelContext` registrations, validates calls, maps tool envelopes, and adapts calls to the store's agent facade. |
-| `src/components` and `src/App.tsx` | Render the human workflow and invoke the store's human facade. Human-only controls live here. |
-| `scripts` and `docs/generated` | Generate machine-readable contract manifests, the OpenAPI documentation projection, and developer reference material from TypeScript sources. Generated files are not independent contract sources. |
+| `src/domain` | Project-inquiry fields, validation, qualification, provenance, snapshot construction, digest checks, state transitions, retry behavior, and receipts. |
+| `src/store` | One immutable state stream, browser persistence, cross-tab refresh, and separate human/agent capability surfaces. |
+| `src/webmcp` | Top-level tool registration, input validation, abort handling, and adaptation to the agent-safe store surface. |
+| `src/components` and `src/App.tsx` | Progressive inquiry presentation and every human-authority control. |
+| `src/contracts` | The five in-page tool names, schemas, descriptions, and structured failures used by this demo. |
 
-The contract layer describes what may be invoked. The domain layer remains the
-authority for whether an operation is valid against the current state.
+## Product state
 
-## Dependency and data flow
+The workflow uses five visible phases:
 
-```mermaid
-flowchart LR
-  C[Canonical contract registry]
-
-  subgraph Entry[Entry points]
-    UI[Human React UI]
-    WM[Top-level WebMCP tools]
-  end
-
-  UI --> HF[Human store facade]
-  WM --> WA[WebMCP validation and adapter]
-  WA --> AF[Agent store facade]
-  HF --> D[Domain operations]
-  AF --> D
-  D --> R[OperationResult and immutable next state]
-  R --> S[PermissionSlipStore commit]
-  S --> LS[(Versioned localStorage)]
-  S -->|subscription snapshot| UI
-  S -->|fresh state per invocation| WM
-
-  C --> WM
-  C -.-> G[Generated contracts, explorer, and OpenAPI projection]
-```
-
-Domain operations return either success data plus a complete next state or a
-structured error plus the state that should be retained. The store is the only
-commit point. Registered tool callbacks resolve the live adapter for every call,
-so they do not act on a React render or registration-time snapshot.
-
-## Domain model
-
-| Type | Role |
+| State | Meaning |
 | --- | --- |
-| `PermissionSlipState` | Versioned aggregate containing status, draft, provenance, revision, optional authorizations, current review/approval, receipts, and value-free activity metadata. |
-| `IntakeDraft` | Editable required and optional intake values; it may be incomplete. |
-| `DisclosureSnapshot` | Complete normalized required values plus only authorized, present optional values. |
-| `FrozenReview` | Snapshot bound to a `reviewId`, revision, creation time, digest, and disclosed/withheld field names. |
-| `HumanApproval` | Human-only record that repeats the exact review ID, revision, and digest. |
-| `DisclosureReceipt` | Finalized local snapshot and disclosure metadata; it explicitly records the simulated local destination and no-network behavior. |
-| `OperationResult<T>` | Success data or a structured domain error, always paired with the state the store should commit or retain. |
+| `empty` | No project inquiry draft exists. |
+| `draft` | The inquiry is editable and has no current approved review. |
+| `review_pending` | A complete normalized snapshot is frozen for human inspection. |
+| `approved` | The person approved that exact review ID, revision, snapshot, and digest. |
+| `submitted` | The approved snapshot was finalized into a browser-local receipt. |
 
-The agent facade can read requirements, replace a complete draft, prepare a
-review, submit an already human-approved review, and read a receipt. The human
-facade can edit fields, change optional disclosure permissions, prepare, approve,
-return to editing, submit locally, and reset. This facade asymmetry makes
-authorization and approval intentionally unavailable to tools.
+A populated draft is not automatically a qualified inquiry. Qualification requires
+the person to confirm a relevant requested next step. Permission for a direct
+response about the project is a separate human decision, and optional ongoing
+updates remain independently controlled.
 
-## Workflow state machine
+## Shared inquiry operations
 
-```mermaid
-stateDiagram-v2
-  [*] --> empty
-  empty --> draft: first human edit or successful agent draft
-  draft --> review_pending: prepare valid frozen review
-  review_pending --> approved: human approves exact review
-  approved --> submitted: matching local submission
+Both entry points reach the same concrete operations:
 
-  review_pending --> draft: edit, permission change, agent draft, or return to editing
-  approved --> draft: edit, permission change, agent draft, or return to editing
-  review_pending --> review_pending: prepare replacement review
-  approved --> review_pending: prepare replacement review
-  draft --> empty: human clears the final value
+| Operation | Human UI | WebMCP | Authority effect |
+| --- | --- | --- | --- |
+| Read current requirements | Yes | `get_intake_requirements` | None |
+| Update or replace the proposed inquiry | Yes | `draft_intake` | Invalidates an older review; grants no permission |
+| Prepare an exact review | Yes | `prepare_submission_review` | Freezes a snapshot; does not approve |
+| Finalize an approved review | Yes | `submit_approved_intake` | Requires an existing matching human approval |
+| Read a receipt | Yes | `get_disclosure_receipt` | None |
 
-  empty --> empty: human reset
-  draft --> empty: human reset
-  review_pending --> empty: human reset
-  approved --> empty: human reset
-  submitted --> empty: human reset
-```
+The human interface additionally owns operations that are intentionally absent
+from the agent surface:
 
-`submitted` is terminal for drafting, editing, review, approval, and submission.
-Only the human reset control starts a new local demonstration. A successful edit
-or disclosure-permission change clears the current review and approval and
-increments the draft revision. No state transition grants approval implicitly.
+- verify proposed values;
+- confirm the requested project next step;
+- permit or withhold a direct project response;
+- permit or withhold optional ongoing updates;
+- approve an exact review;
+- return to editing; and
+- reset browser-local state.
 
-## Disclosure boundary
+The store exposes a smaller frozen agent facade, so WebMCP handlers do not receive
+references to those human-only operations.
 
-```mermaid
-flowchart LR
-  subgraph Agent[Agent context]
-    AK[Information the agent may already know]
-    TC[WebMCP tool call]
-    TR[Tool result]
-  end
+## Provenance and verification
 
-  subgraph Human[Human context]
-    HU[Human form edits]
-    AUTH[Optional disclosure toggles]
-    APPROVE[Visible human approval]
-  end
+The inquiry keeps useful product-native provenance:
 
-  subgraph Boundary[Permission Slip authorization boundary]
-    V[Schema, runtime, and domain validation]
-    GATE{Required field or authorized optional field?}
-    DRAFT[Shared local draft]
-    REVIEW[Frozen review<br/>reviewId + revision + SHA-256 digest]
-  end
+- information the person supplied;
+- values the assistant suggested;
+- limited entry or referral context captured by the page; and
+- values the person explicitly verified.
 
-  AK -.-> TC
-  TC --> V --> GATE
-  AUTH --> GATE
-  HU --> DRAFT
-  GATE -->|accepted atomically| DRAFT
-  GATE -->|unauthorized optional field| REJECT[Structured rejection]
-  DRAFT --> REVIEW
-  REVIEW -->|exact visible disclosure| APPROVE
-  APPROVE -->|matching review, revision, and digest| LOCAL[Local simulated submission]
-  LOCAL --> RECEIPT[Local disclosure receipt]
-  REVIEW -.-> TR
-  RECEIPT -.-> TR
-```
+Assistant suggestion is not human verification. Replacing or editing a value
+updates its provenance, and the finalized receipt preserves the provenance for the
+approved snapshot.
 
-The boundary governs what Permission Slip accepts through its WebMCP tools and
-what those tools return. It does not erase information supplied in chat, prevent
-an agent from inspecting the visible page, or govern processing performed by the
-agent provider.
+Activity entries record actor, action, outcome, and field names without copying raw
+inquiry values into the visible timeline.
 
-## Core invariants
+## Review binding
 
-1. Required fields are always part of a valid disclosure snapshot.
-2. An optional value enters the snapshot only when the human has enabled its
-   matching disclosure permission and the value is present and valid.
-3. An agent draft containing an unknown or unauthorized optional property is
-   rejected atomically.
-4. A review freezes one normalized snapshot with a unique `reviewId`, current
-   revision, and SHA-256 digest.
-5. Only the human facade can create an approval, and it must match the current
-   review's ID, revision, and digest.
-6. Edits, changed permissions, replacement drafts, and returning to edit mode
-   invalidate the current review and approval.
-7. Submission recomputes the snapshot and digest before creating a local receipt.
-8. Concurrent asynchronous review or submit work is rejected if the store state
-   changes before commit.
+Review preparation:
+
+1. validates every required inquiry value;
+2. requires a human-confirmed relevant requested next step;
+3. projects only permitted optional values;
+4. records project-response and optional ongoing-update decisions;
+5. normalizes the exact candidate payload in stable field order;
+6. creates a unique review ID tied to the current draft revision;
+7. computes a SHA-256 digest over the canonical snapshot; and
+8. stores the frozen review without creating approval.
+
+The visible approval action records the review ID, revision, and digest. Any
+disclosure-affecting edit, verification change, requested-next-step change, or
+permission change clears both review and approval.
+
+## Frozen-snapshot finalization
+
+Before finalization, the domain operation checks:
+
+1. the supplied review ID identifies the current review;
+2. the current status has matching visible human approval;
+3. review, approval, and draft revisions agree;
+4. the explicit-intent qualification rule still passes;
+5. current permissions still match the reviewed permissions;
+6. the canonical candidate still equals the frozen snapshot; and
+7. the recomputed digest matches the reviewed and approved digest.
+
+The receipt is constructed from the frozen review. Mutable form state is never the
+execution payload.
+
+A second finalization request for the same approved review resolves to the existing
+receipt rather than creating a duplicate. A different or stale review is rejected
+with a structured recovery step.
 
 ## Persistence and concurrency
 
-The store writes a versioned envelope to `localStorage` under the current origin.
-Persisted input is parsed defensively and rejected unless its state relationships
-are internally consistent. Browser storage events and a read-before-operation
-synchronization step prevent another tab's newer state from being silently
-overwritten. If storage is unavailable, the page continues in memory for the
-current session.
+The store writes a versioned envelope to `localStorage` for the current origin.
+Persisted input is parsed defensively; malformed or internally inconsistent state
+is discarded. Browser storage events and read-before-operation synchronization
+help prevent a second tab from silently finalizing an approval made stale
+elsewhere.
 
-This is durability for a demonstration, not a security boundary. Page scripts,
-developer tools, extensions, and anyone with local browser access may alter or
-erase `localStorage`.
+Asynchronous review and finalization operations capture their starting store
+snapshot. If state changes while digest work is in flight, the result is rejected
+instead of overwriting newer state.
 
-## Contract projections and future extraction
+This persistence is only for a repeatable browser demonstration:
 
-The contract registry is plain TypeScript and JSON-compatible metadata rather
-than React presentation data. That keeps open a future extraction into a package
-that could project the same contracts into browser WebMCP, an MCP server, REST
-gateways, AAPI, generated documentation, or bindings.
+- it normally survives refreshes on the same origin;
+- it is unavailable on another origin, device, or cleared profile;
+- it may fall back to in-memory state when browser storage is blocked; and
+- it can be edited or erased through page scripts, extensions, developer tools, or
+  direct storage access.
 
-Those systems do not exist here. In particular, synthetic paths in
-`docs/generated/openapi.json` are renderer-friendly documentation records. They
-must carry `x-webmcp-tool: true`, `x-documentation-projection: true`, and
-`x-network-endpoint: false`; clients must not attempt to call them over HTTP.
+## Network boundary
+
+The application has no backend, database, authentication, remote submission
+endpoint, email delivery, CRM, analytics, or telemetry. Drafting, reviewing,
+approving, finalizing, receipt lookup, and reset initiate no application network
+request.
+
+When hosted, the browser necessarily requests the static HTML, CSS, and JavaScript
+files. That asset loading does not change the local-only submission boundary.
+
+## Digest boundary
+
+The digest detects a changed canonical snapshot. It does not prove who approved
+the review, what the person understood, that the browser was uncompromised, that
+`localStorage` was not edited, or when an event happened independently of the
+local clock.

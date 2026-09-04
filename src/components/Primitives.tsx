@@ -71,9 +71,14 @@ interface FieldGroupProps {
   hint?: string
   error?: string
   optional?: boolean
-  provenance?: 'Human' | 'Agent'
+  provenance?: readonly ProvenanceBadge[]
   htmlFor: string
   children: ReactNode
+}
+
+export interface ProvenanceBadge {
+  label: string
+  tone: 'person' | 'assistant' | 'automatic' | 'verified'
 }
 
 export function FieldGroup({
@@ -92,11 +97,14 @@ export function FieldGroup({
         <label htmlFor={htmlFor}>{label}</label>
         <span className="field__meta">
           {optional ? 'Optional' : 'Required'}
-          {provenance ? (
-            <span className={`provenance provenance--${provenance.toLowerCase()}`}>
-              {provenance}
+          {provenance?.map((badge) => (
+            <span
+              className={`provenance provenance--${badge.tone}`}
+              key={`${htmlFor}-${badge.tone}`}
+            >
+              {badge.label}
             </span>
-          ) : null}
+          ))}
         </span>
       </div>
       {children}

@@ -1,14 +1,19 @@
 import { useEffect, useState } from 'react'
-import { OPTIONAL_FIELD_DEFINITIONS } from '../domain/constants'
 import type {
   IntakeDraft,
   IntakeFieldName,
   OptionalDisclosureAuthorizations,
 } from '../domain/types'
-import { FieldGroup } from './Primitives'
+import { FieldGroup, type ProvenanceBadge } from './Primitives'
+
+export interface InquiryFieldProvenance {
+  source: 'person_provided' | 'assistant_suggested'
+  verifiedByHuman: boolean
+  updatedAt: string
+}
 
 export type FieldProvenance = Partial<
-  Record<IntakeFieldName, 'human' | 'agent'>
+  Record<IntakeFieldName, InquiryFieldProvenance>
 >
 
 interface IntakeFormProps {
@@ -17,14 +22,23 @@ interface IntakeFormProps {
   provenance: FieldProvenance
   errors: Partial<Record<IntakeFieldName, string>>
   disabled?: boolean
-  onChange: (field: IntakeFieldName, value: string | number | undefined) => void
+  onChange: (field: IntakeFieldName, value: string | undefined) => void
 }
 
-function provenanceLabel(
-  value: 'human' | 'agent' | undefined,
-): 'Human' | 'Agent' | undefined {
+function provenanceBadges(
+  value: InquiryFieldProvenance | undefined,
+): ProvenanceBadge[] | undefined {
   if (!value) return undefined
-  return value === 'agent' ? 'Agent' : 'Human'
+
+  const badges: ProvenanceBadge[] = [
+    value.source === 'assistant_suggested'
+      ? { label: 'Assistant suggestion', tone: 'assistant' }
+      : { label: 'Person', tone: 'person' },
+  ]
+  if (value.verifiedByHuman) {
+    badges.push({ label: 'Verified', tone: 'verified' })
+  }
+  return badges
 }
 
 type IntakeFormBuffer = Record<IntakeFieldName, string>
@@ -33,17 +47,16 @@ function bufferFromDraft(draft: IntakeDraft): IntakeFormBuffer {
   return {
     contactName: draft.contactName ?? '',
     email: draft.email ?? '',
-    eventType: draft.eventType ?? '',
-    preferredDate: draft.preferredDate ?? '',
-    estimatedAttendeeCount:
-      draft.estimatedAttendeeCount === undefined
-        ? ''
-        : String(draft.estimatedAttendeeCount),
-    eventGoal: draft.eventGoal ?? '',
+    inquiryType: draft.inquiryType ?? '',
+    desiredOutcome: draft.desiredOutcome ?? '',
+    relevantBackground: draft.relevantBackground ?? '',
+    timeline: draft.timeline ?? '',
+    preferredResponseMethod: draft.preferredResponseMethod ?? '',
+    requestedNextStep: draft.requestedNextStep ?? '',
     phone: draft.phone ?? '',
-    budgetRange: draft.budgetRange ?? '',
-    socialHandle: draft.socialHandle ?? '',
-    additionalNotes: draft.additionalNotes ?? '',
+    budgetOrConstraints: draft.budgetOrConstraints ?? '',
+    organization: draft.organization ?? '',
+    additionalContext: draft.additionalContext ?? '',
   }
 }
 
@@ -60,8 +73,7 @@ export function IntakeForm({
   )
 
   useEffect(() => {
-    // WebMCP and preset updates arrive through the shared store, so refresh the
-    // local edit buffer when that canonical draft changes.
+    // WebMCP and rehearsal updates arrive through the shared store.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setBuffer(bufferFromDraft(draft))
   }, [draft])
@@ -71,14 +83,7 @@ export function IntakeForm({
   }
 
   function commitText(field: IntakeFieldName, value: string): void {
-    onChange(field, value)
-  }
-
-  function commitAttendeeCount(rawValue: string): void {
-    onChange(
-      'estimatedAttendeeCount',
-      rawValue === '' ? undefined : Number(rawValue),
-    )
+    onChange(field, value === '' ? undefined : value)
   }
 
   const shared = (
@@ -96,204 +101,332 @@ export function IntakeForm({
     'aria-invalid': Boolean(errors[field]),
   })
 
+  function optionalShared(field: keyof OptionalDisclosureAuthorizations) {
+    return {
+      ...shared(field, false, true),
+      disabled: disabled || !authorizations[field],
+    }
+  }
+
+  function optionalHint(field: keyof OptionalDisclosureAuthorizations): string {
+    return authorizations[field]
+      ? 'You chose to make this available for the exact review.'
+      : 'Withheld. Use the human-only inclusion control above to share it.'
+  }
+
   return (
-    <div className="form-grid">
-      <FieldGroup
-        label="Contact name"
-        htmlFor="contactName"
-        error={errors.contactName}
-        provenance={provenanceLabel(provenance.contactName)}
-      >
-        <input
-          {...shared('contactName', true)}
-          autoComplete="name"
-          maxLength={100}
-          placeholder="Maya Chen"
-          type="text"
-          value={buffer.contactName}
-          onBlur={(event) => commitText('contactName', event.currentTarget.value)}
-          onChange={(event) => updateBuffer('contactName', event.target.value)}
-        />
-      </FieldGroup>
-
-      <FieldGroup
-        label="Email"
-        htmlFor="email"
-        error={errors.email}
-        provenance={provenanceLabel(provenance.email)}
-      >
-        <input
-          {...shared('email', true)}
-          autoComplete="email"
-          inputMode="email"
-          maxLength={254}
-          placeholder="maya.chen@example.com"
-          type="email"
-          value={buffer.email}
-          onBlur={(event) => commitText('email', event.currentTarget.value)}
-          onChange={(event) => updateBuffer('email', event.target.value)}
-        />
-      </FieldGroup>
-
-      <FieldGroup
-        label="Event type"
-        htmlFor="eventType"
-        error={errors.eventType}
-        provenance={provenanceLabel(provenance.eventType)}
-      >
-        <input
-          {...shared('eventType', true)}
-          maxLength={160}
-          placeholder="Creative coding workshop"
-          type="text"
-          value={buffer.eventType}
-          onBlur={(event) => commitText('eventType', event.currentTarget.value)}
-          onChange={(event) => updateBuffer('eventType', event.target.value)}
-        />
-      </FieldGroup>
-
-      <FieldGroup
-        label="Preferred date"
-        htmlFor="preferredDate"
-        error={errors.preferredDate}
-        provenance={provenanceLabel(provenance.preferredDate)}
-      >
-        <input
-          {...shared('preferredDate', true)}
-          type="date"
-          value={buffer.preferredDate}
-          onBlur={(event) => commitText('preferredDate', event.currentTarget.value)}
-          onChange={(event) => updateBuffer('preferredDate', event.target.value)}
-        />
-      </FieldGroup>
-
-      <FieldGroup
-        label="Estimated attendee count"
-        htmlFor="estimatedAttendeeCount"
-        error={errors.estimatedAttendeeCount}
-        provenance={provenanceLabel(provenance.estimatedAttendeeCount)}
-      >
-        <input
-          {...shared('estimatedAttendeeCount', true)}
-          inputMode="numeric"
-          max={1000}
-          min={1}
-          placeholder="20"
-          type="number"
-          value={buffer.estimatedAttendeeCount}
-          onBlur={(event) => commitAttendeeCount(event.currentTarget.value)}
-          onChange={(event) =>
-            updateBuffer('estimatedAttendeeCount', event.target.value)
-          }
-        />
-      </FieldGroup>
-
-      <div className="field--wide">
-        <FieldGroup
-          label="Event goal"
-          htmlFor="eventGoal"
-          error={errors.eventGoal}
-          provenance={provenanceLabel(provenance.eventGoal)}
-        >
-          <textarea
-            {...shared('eventGoal', true)}
-            maxLength={1000}
-            placeholder="What should this gathering make possible?"
-            value={buffer.eventGoal}
-            onBlur={(event) => commitText('eventGoal', event.currentTarget.value)}
-            onChange={(event) => updateBuffer('eventGoal', event.target.value)}
-          />
-        </FieldGroup>
-      </div>
-
-      {OPTIONAL_FIELD_DEFINITIONS.map((definition) => {
-        const field = definition.name
-        const authorized = authorizations[field]
-        const common = {
-          ...shared(field, false, true),
-          disabled: disabled || !authorized,
-        }
-        const hint = authorized
-          ? 'Human-authorized for disclosure.'
-          : 'Withheld. Authorize this field in the disclosure controls first.'
-        const withheldPlaceholder = authorized ? undefined : 'Not authorized'
-
-        if (field === 'additionalNotes') {
-          return (
-            <div className="field--wide" key={field}>
-              <FieldGroup
-                label={definition.label}
-                htmlFor={field}
-                hint={hint}
-                error={errors[field]}
-                optional
-                provenance={provenanceLabel(provenance[field])}
-              >
-                <textarea
-                  {...common}
-                  maxLength={2000}
-                  placeholder={
-                    withheldPlaceholder ??
-                    'Only context you intentionally choose to share'
-                  }
-                  value={buffer[field]}
-                  onBlur={(event) => commitText(field, event.currentTarget.value)}
-                  onChange={(event) => updateBuffer(field, event.target.value)}
-                />
-              </FieldGroup>
-            </div>
-          )
-        }
-
-        if (field === 'budgetRange') {
-          return (
-            <FieldGroup
-              key={field}
-              label={definition.label}
-              htmlFor={field}
-              hint={hint}
-              error={errors[field]}
-              optional
-              provenance={provenanceLabel(provenance[field])}
-            >
-              <input
-                {...common}
-                maxLength={120}
-                placeholder={withheldPlaceholder ?? 'For example, $1,000–$2,500'}
-                type="text"
-                value={buffer[field]}
-                onBlur={(event) => commitText(field, event.currentTarget.value)}
-                onChange={(event) => updateBuffer(field, event.target.value)}
-              />
-            </FieldGroup>
-          )
-        }
-
-        return (
+    <div className="inquiry-form">
+      <fieldset className="form-section">
+        <legend>
+          <span>01</span> Project direction
+        </legend>
+        <p className="form-section__copy">
+          Start with the outcome. The assistant can organize the request, but it
+          should never invent missing facts.
+        </p>
+        <div className="form-grid">
           <FieldGroup
-            key={field}
-            label={definition.label}
-            htmlFor={field}
-            hint={hint}
-            error={errors[field]}
-            optional
-            provenance={provenanceLabel(provenance[field])}
+            label="Inquiry type"
+            htmlFor="inquiryType"
+            error={errors.inquiryType}
+            provenance={provenanceBadges(provenance.inquiryType)}
+          >
+            <select
+              {...shared('inquiryType', true)}
+              value={buffer.inquiryType}
+              onBlur={(event) =>
+                commitText('inquiryType', event.currentTarget.value)
+              }
+              onChange={(event) => {
+                updateBuffer('inquiryType', event.target.value)
+                commitText('inquiryType', event.target.value)
+              }}
+            >
+              <option value="">Choose an inquiry type</option>
+              <option value="prototype">Product prototype</option>
+              <option value="website">Website or digital experience</option>
+              <option value="product_strategy">Product strategy</option>
+              <option value="creative_collaboration">
+                Creative technology collaboration
+              </option>
+              <option value="other">Something else</option>
+            </select>
+          </FieldGroup>
+
+          <FieldGroup
+            label="Timeline"
+            htmlFor="timeline"
+            error={errors.timeline}
+            provenance={provenanceBadges(provenance.timeline)}
           >
             <input
-              {...common}
-              autoComplete={field === 'phone' ? 'tel' : 'off'}
-              maxLength={field === 'phone' ? 40 : 100}
-              placeholder={
-                withheldPlaceholder ?? (field === 'phone' ? '215-555-0134' : '@maya')
-              }
-              type={field === 'phone' ? 'tel' : 'text'}
-              value={buffer[field]}
-              onBlur={(event) => commitText(field, event.currentTarget.value)}
-              onChange={(event) => updateBuffer(field, event.target.value)}
+              {...shared('timeline', true)}
+              maxLength={160}
+              placeholder="Eight weeks, with a flexible start date"
+              type="text"
+              value={buffer.timeline}
+              onBlur={(event) => commitText('timeline', event.currentTarget.value)}
+              onChange={(event) => updateBuffer('timeline', event.target.value)}
             />
           </FieldGroup>
-        )
-      })}
+
+          <div className="field--wide">
+            <FieldGroup
+              label="Desired outcome"
+              htmlFor="desiredOutcome"
+              error={errors.desiredOutcome}
+              provenance={provenanceBadges(provenance.desiredOutcome)}
+            >
+              <textarea
+                {...shared('desiredOutcome', true)}
+                maxLength={1200}
+                placeholder="What should exist or be clearer at the end of the engagement?"
+                value={buffer.desiredOutcome}
+                onBlur={(event) =>
+                  commitText('desiredOutcome', event.currentTarget.value)
+                }
+                onChange={(event) =>
+                  updateBuffer('desiredOutcome', event.target.value)
+                }
+              />
+            </FieldGroup>
+          </div>
+
+          <div className="field--wide">
+            <FieldGroup
+              label="Relevant background"
+              htmlFor="relevantBackground"
+              error={errors.relevantBackground}
+              provenance={provenanceBadges(provenance.relevantBackground)}
+            >
+              <textarea
+                {...shared('relevantBackground', true)}
+                maxLength={1600}
+                placeholder="What already exists, what has been tried, and what is still uncertain?"
+                value={buffer.relevantBackground}
+                onBlur={(event) =>
+                  commitText('relevantBackground', event.currentTarget.value)
+                }
+                onChange={(event) =>
+                  updateBuffer('relevantBackground', event.target.value)
+                }
+              />
+            </FieldGroup>
+          </div>
+        </div>
+      </fieldset>
+
+      <fieldset className="form-section">
+        <legend>
+          <span>02</span> Contact and next step
+        </legend>
+        <p className="form-section__copy">
+          Enough information to respond, plus the specific business step you are
+          asking for.
+        </p>
+        <div className="form-grid">
+          <FieldGroup
+            label="Contact name"
+            htmlFor="contactName"
+            error={errors.contactName}
+            provenance={provenanceBadges(provenance.contactName)}
+          >
+            <input
+              {...shared('contactName', true)}
+              autoComplete="name"
+              maxLength={100}
+              placeholder="Maya Chen"
+              type="text"
+              value={buffer.contactName}
+              onBlur={(event) =>
+                commitText('contactName', event.currentTarget.value)
+              }
+              onChange={(event) =>
+                updateBuffer('contactName', event.target.value)
+              }
+            />
+          </FieldGroup>
+
+          <FieldGroup
+            label="Email"
+            htmlFor="email"
+            error={errors.email}
+            provenance={provenanceBadges(provenance.email)}
+          >
+            <input
+              {...shared('email', true)}
+              autoComplete="email"
+              inputMode="email"
+              maxLength={254}
+              placeholder="maya.chen@example.com"
+              type="email"
+              value={buffer.email}
+              onBlur={(event) => commitText('email', event.currentTarget.value)}
+              onChange={(event) => updateBuffer('email', event.target.value)}
+            />
+          </FieldGroup>
+
+          <FieldGroup
+            label="Preferred response method"
+            htmlFor="preferredResponseMethod"
+            error={errors.preferredResponseMethod}
+            provenance={provenanceBadges(provenance.preferredResponseMethod)}
+          >
+            <select
+              {...shared('preferredResponseMethod', true)}
+              value={buffer.preferredResponseMethod}
+              onBlur={(event) =>
+                commitText('preferredResponseMethod', event.currentTarget.value)
+              }
+              onChange={(event) => {
+                updateBuffer('preferredResponseMethod', event.target.value)
+                commitText('preferredResponseMethod', event.target.value)
+              }}
+            >
+              <option value="">Choose a response method</option>
+              <option value="email">Email</option>
+              <option value="phone">Phone</option>
+              <option value="video_call">Video call</option>
+            </select>
+          </FieldGroup>
+
+          <FieldGroup
+            label="Requested next step"
+            htmlFor="requestedNextStep"
+            error={errors.requestedNextStep}
+            provenance={provenanceBadges(provenance.requestedNextStep)}
+          >
+            <select
+              {...shared('requestedNextStep', true)}
+              value={buffer.requestedNextStep}
+              onBlur={(event) =>
+                commitText('requestedNextStep', event.currentTarget.value)
+              }
+              onChange={(event) => {
+                updateBuffer('requestedNextStep', event.target.value)
+                commitText('requestedNextStep', event.target.value)
+              }}
+            >
+              <option value="">Choose a requested next step</option>
+              <option value="discovery_call">30-minute discovery call</option>
+              <option value="written_response">Written response</option>
+              <option value="project_review">Project review</option>
+            </select>
+          </FieldGroup>
+        </div>
+      </fieldset>
+
+      <details className="optional-context">
+        <summary>
+          <span>
+            Optional context
+            <small>Included only when you turn on its separate permission</small>
+          </span>
+          <span aria-hidden="true">+</span>
+        </summary>
+        <div className="form-grid optional-context__fields">
+          <FieldGroup
+            label="Budget or constraints"
+            htmlFor="budgetOrConstraints"
+            hint={optionalHint('budgetOrConstraints')}
+            error={errors.budgetOrConstraints}
+            optional
+            provenance={provenanceBadges(provenance.budgetOrConstraints)}
+          >
+            <input
+              {...optionalShared('budgetOrConstraints')}
+              maxLength={500}
+              placeholder={
+                authorizations.budgetOrConstraints
+                  ? '$15,000–$25,000, with an eight-week window'
+                  : 'Not authorized'
+              }
+              type="text"
+              value={buffer.budgetOrConstraints}
+              onBlur={(event) =>
+                commitText('budgetOrConstraints', event.currentTarget.value)
+              }
+              onChange={(event) =>
+                updateBuffer('budgetOrConstraints', event.target.value)
+              }
+            />
+          </FieldGroup>
+
+          <FieldGroup
+            label="Organization"
+            htmlFor="organization"
+            hint={optionalHint('organization')}
+            error={errors.organization}
+            optional
+            provenance={provenanceBadges(provenance.organization)}
+          >
+            <input
+              {...optionalShared('organization')}
+              autoComplete="organization"
+              maxLength={160}
+              placeholder={
+                authorizations.organization ? 'Organization name' : 'Not authorized'
+              }
+              type="text"
+              value={buffer.organization}
+              onBlur={(event) =>
+                commitText('organization', event.currentTarget.value)
+              }
+              onChange={(event) =>
+                updateBuffer('organization', event.target.value)
+              }
+            />
+          </FieldGroup>
+
+          <FieldGroup
+            label="Phone"
+            htmlFor="phone"
+            hint={optionalHint('phone')}
+            error={errors.phone}
+            optional
+            provenance={provenanceBadges(provenance.phone)}
+          >
+            <input
+              {...optionalShared('phone')}
+              autoComplete="tel"
+              maxLength={40}
+              placeholder={authorizations.phone ? '215-555-0134' : 'Not authorized'}
+              type="tel"
+              value={buffer.phone}
+              onBlur={(event) => commitText('phone', event.currentTarget.value)}
+              onChange={(event) => updateBuffer('phone', event.target.value)}
+            />
+          </FieldGroup>
+
+          <div className="field--wide">
+            <FieldGroup
+              label="Additional context"
+              htmlFor="additionalContext"
+              hint={optionalHint('additionalContext')}
+              error={errors.additionalContext}
+              optional
+              provenance={provenanceBadges(provenance.additionalContext)}
+            >
+              <textarea
+                {...optionalShared('additionalContext')}
+                maxLength={2000}
+                placeholder={
+                  authorizations.additionalContext
+                    ? 'Only context you intentionally choose to share'
+                    : 'Not authorized'
+                }
+                value={buffer.additionalContext}
+                onBlur={(event) =>
+                  commitText('additionalContext', event.currentTarget.value)
+                }
+                onChange={(event) =>
+                  updateBuffer('additionalContext', event.target.value)
+                }
+              />
+            </FieldGroup>
+          </div>
+        </div>
+      </details>
     </div>
   )
 }

@@ -1,5 +1,6 @@
 import {
   approveReviewFromHuman,
+  confirmNextStepIntentFromHuman,
   createDomainDependencies,
   createInitialState,
   getDisclosureReceipt,
@@ -10,17 +11,23 @@ import {
   replaceDraftFromAgent,
   resetFromHuman,
   returnToEditingFromHuman,
+  setContactPermissionFromHuman,
   setOptionalDisclosureFromHuman,
   submitApprovedIntake,
   updateDraftFromHuman,
+  verifyAssistantSuggestionsFromHuman,
   type ApprovalInput,
   type ApprovalResult,
+  type AssistantVerificationResult,
+  type ContactPermissionName,
+  type ContactPermissionResult,
   type DisclosureAuthorizationResult,
   type DisclosureReceipt,
   type DomainDependencies,
   type DraftIntakeResult,
   type HumanDraftUpdateResult,
   type IntakeRequirements,
+  type NextStepIntentResult,
   type OperationResult,
   type OptionalFieldName,
   type PermissionSlipState,
@@ -63,6 +70,14 @@ export interface HumanFacade {
     field: OptionalFieldName,
     authorized: boolean,
   ) => OperationResult<DisclosureAuthorizationResult>
+  verifyAssistantSuggestions: () => OperationResult<AssistantVerificationResult>
+  setNextStepIntent: (
+    confirmed: boolean,
+  ) => OperationResult<NextStepIntentResult>
+  setContactPermission: (
+    permission: ContactPermissionName,
+    granted: boolean,
+  ) => OperationResult<ContactPermissionResult>
   prepareSubmissionReview: () => Promise<OperationResult<PreparedReviewResult>>
   approveReview: (input: ApprovalInput) => OperationResult<ApprovalResult>
   returnToEditing: () => OperationResult<ReturnToEditingResult>
@@ -189,6 +204,36 @@ export class PermissionSlipStore {
             this.state,
             field,
             authorized,
+            this.dependencies,
+          ),
+        )
+      },
+      verifyAssistantSuggestions: () => {
+        this.synchronizeFromStorage()
+        return this.commit(
+          verifyAssistantSuggestionsFromHuman(this.state, this.dependencies),
+        )
+      },
+      setNextStepIntent: (confirmed: boolean) => {
+        this.synchronizeFromStorage()
+        return this.commit(
+          confirmNextStepIntentFromHuman(
+            this.state,
+            confirmed,
+            this.dependencies,
+          ),
+        )
+      },
+      setContactPermission: (
+        permission: ContactPermissionName,
+        granted: boolean,
+      ) => {
+        this.synchronizeFromStorage()
+        return this.commit(
+          setContactPermissionFromHuman(
+            this.state,
+            permission,
+            granted,
             this.dependencies,
           ),
         )

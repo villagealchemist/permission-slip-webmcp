@@ -17,9 +17,27 @@ export const WORKFLOW_STATES = [
 /** Capabilities deliberately absent from the WebMCP registry. */
 export const HUMAN_ONLY_CAPABILITIES = [
   {
+    name: 'verify_assistant_suggestions',
+    title: 'Verify assistant suggestions',
+    reason:
+      'Only the visible human UI can mark assistant-suggested values as verified.',
+  },
+  {
+    name: 'confirm_requested_next_step',
+    title: 'Confirm the requested next step',
+    reason:
+      'Only the person can confirm that the selected business next step expresses their intent.',
+  },
+  {
     name: 'authorize_optional_disclosure',
     title: 'Authorize optional disclosure',
     reason: 'Only visible per-field toggles can expand the disclosure boundary.',
+  },
+  {
+    name: 'set_contact_permission',
+    title: 'Set contact permission',
+    reason:
+      'Only visible human controls can permit a project response or optional updates.',
   },
   {
     name: 'approve_exact_review',
@@ -41,9 +59,11 @@ export const HUMAN_ONLY_CAPABILITIES = [
 /** Invariants enforced below both the human UI and WebMCP adapter. */
 export const WORKFLOW_INVARIANTS = [
   'Approval is valid only for the current reviewId, digest, and revision.',
-  'Any disclosure-affecting edit invalidates the current review and approval.',
+  'Any pre-submission edit or permission change invalidates review and approval.',
   'Unauthorized optional input rejects the complete agent draft atomically.',
-  'Submission revalidates the frozen snapshot before creating a local receipt.',
+  'Assistant suggestions, next-step intent, and project-response permission require visible human action.',
+  'Submission revalidates the frozen payload before creating a simulated local receipt.',
+  'Rejected submit attempts create PII-free local failure receipts.',
   'Submitted is terminal until the human resets the local demo.',
 ] as const
 
@@ -54,24 +74,24 @@ export const DOMAIN_MODEL = [
     role: 'The versioned aggregate shared by the human UI and every tool invocation.',
   },
   {
-    name: 'IntakeDraft',
-    role: 'An editable, potentially incomplete set of required and optional values.',
+    name: 'InquiryDraft',
+    role: 'An editable, potentially incomplete Village Alchemist inquiry.',
   },
   {
-    name: 'DisclosureSnapshot',
-    role: 'Six normalized required values plus only present, human-authorized optional values.',
+    name: 'InquirySnapshot',
+    role: 'Eight normalized required values plus only present, human-authorized optional values.',
   },
   {
     name: 'FrozenReview',
-    role: 'An exact snapshot bound to a review ID, revision, creation time, and digest.',
+    role: 'An exact inquiry, permission, intent, and provenance payload bound to a review ID, revision, and digest.',
   },
   {
     name: 'HumanApproval',
     role: 'A human-only binding to the current review ID, revision, and digest.',
   },
   {
-    name: 'DisclosureReceipt',
-    role: 'The local record of what the simulated submission disclosed and withheld.',
+    name: 'SubmissionReceipt',
+    role: 'A successful qualified-inquiry receipt or PII-free rejected-attempt receipt stored locally.',
   },
   {
     name: 'OperationResult<T>',

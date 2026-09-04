@@ -24,6 +24,14 @@ export const CONTRACT_ERRORS = {
     recovery: 'Wait for the human to approve the displayed review, then retry.',
     retryable: true,
   }),
+  CONTACT_PERMISSION_REQUIRED: defineError({
+    code: 'CONTACT_PERMISSION_REQUIRED',
+    source: 'domain',
+    summary: 'The person has not granted permission for a project response.',
+    recovery:
+      'Ask the person to grant the visible project-response permission; no tool can grant it.',
+    retryable: true,
+  }),
   DIGEST_MISMATCH: defineError({
     code: 'DIGEST_MISMATCH',
     source: 'domain',
@@ -43,6 +51,14 @@ export const CONTRACT_ERRORS = {
     source: 'domain',
     summary: 'A human-only control must complete the next workflow step.',
     recovery: 'Ask the human to use the visible page control.',
+    retryable: true,
+  }),
+  HUMAN_VERIFICATION_REQUIRED: defineError({
+    code: 'HUMAN_VERIFICATION_REQUIRED',
+    source: 'domain',
+    summary: 'Assistant-suggested inquiry values still need human verification.',
+    recovery:
+      'Ask the person to verify the visible suggestions; no tool can mark them verified.',
     retryable: true,
   }),
   INCOMPLETE_DRAFT: defineError({
@@ -72,6 +88,14 @@ export const CONTRACT_ERRORS = {
     summary: 'The application produced a result that was not JSON serializable.',
     recovery: 'Do not retry automatically; inspect the application.',
     retryable: false,
+  }),
+  INTENT_CONFIRMATION_REQUIRED: defineError({
+    code: 'INTENT_CONFIRMATION_REQUIRED',
+    source: 'domain',
+    summary: 'The person has not confirmed the requested business next step.',
+    recovery:
+      'Ask the person to confirm the visible requested next step; no tool can confirm it.',
+    retryable: true,
   }),
   RECEIPT_NOT_FOUND: defineError({
     code: 'RECEIPT_NOT_FOUND',
@@ -145,7 +169,38 @@ export const TOOL_FAILURE_SCHEMA = {
         },
         message: { type: 'string' },
         retryable: { type: 'boolean' },
-        details: { type: 'object', additionalProperties: true },
+        details: {
+          type: 'object',
+          properties: {
+            retry: { type: 'string' },
+            fields: {
+              type: 'array',
+              items: { type: 'string' },
+              uniqueItems: true,
+            },
+            issues: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  field: { type: 'string' },
+                  path: { type: 'string' },
+                  code: { type: 'string' },
+                  message: { type: 'string' },
+                },
+                required: ['code', 'message'],
+                additionalProperties: false,
+              },
+            },
+            receiptId: {
+              type: 'string',
+              minLength: 1,
+              maxLength: 128,
+              pattern: '^[A-Za-z0-9._-]+$',
+            },
+          },
+          additionalProperties: false,
+        },
       },
       required: ['code', 'message', 'retryable'],
       additionalProperties: false,

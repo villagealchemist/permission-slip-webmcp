@@ -1,75 +1,109 @@
 # Privacy model
 
-Permission Slip demonstrates explicit, field-level disclosure consent for one
-fictional workshop inquiry. It minimizes the application's intake surface and
-makes the candidate disclosure visible before local finalization.
+Permission Slip demonstrates explicit human control for one fictional Village
+Alchemist project inquiry. It makes the proposed disclosure, requested next step,
+contact permissions, and result visible before browser-local finalization.
 
 It is not an identity system, secure vault, legal consent record, or guarantee
 about what an external agent provider processes.
 
-## Data classes
+## Inquiry data
 
-| Class | Fields | Rule |
-| --- | --- | --- |
-| Required | `contactName`, `email`, `eventType`, `preferredDate`, `estimatedAttendeeCount`, `eventGoal` | Every field must be valid and is included in any prepared review. |
-| Optional and human-authorized | `phone`, `budgetRange`, `socialHandle`, `additionalNotes` | A value is included only when it is present, valid, and the matching human toggle is enabled. The agent cannot change the toggle. |
-| Withheld | Any optional field without both a value and current authorization | The field name is listed as withheld; its value is absent from the review and receipt. Revoking authorization invalidates an existing review or approval. |
-| Never collected | Street address, employer, precise live location, payment information, unrelated private conversation history | These categories have no intake fields and are rejected if supplied to a tool. Their category names and reasons may be shown as policy metadata. |
-| Workflow metadata | Status, revision, IDs, timestamps, digest, field provenance, authorization flags, and activity entries | Stored locally to enforce and explain the workflow. Activity records actor/action/outcome and field names, not raw intake values. |
+The smallest useful inquiry describes:
 
-Optional values may exist in the human's local draft while their toggles are off.
-That allows a person to withhold a value without deleting it. Such a value is not
-copied into the frozen review, review tool result, or disclosure receipt.
+- the kind of project or collaboration;
+- the desired outcome;
+- relevant background;
+- timeline and practical constraints;
+- budget information when intentionally supplied;
+- contact details and preferred response method;
+- the specific next step the person wants; and
+- limited entry or referral context captured by the page.
 
-## Agent knowledge is not disclosure authorization
+Missing or ambiguous facts remain missing or ambiguous. Assistant suggestions are
+not presented as verified facts.
 
-An agent may already know a value because a person typed it in chat, because it
-appears elsewhere on the visible page, or because the agent obtained it outside
-Permission Slip. That knowledge does not authorize the `draft_intake` tool to
-place the value across Permission Slip's disclosure boundary.
+## Permission classes
+
+| Decision or value | Rule |
+| --- | --- |
+| Required project information | Must be valid before a review can be prepared and appears in the frozen review. |
+| Optional inquiry values | Included only when present and permitted by the matching human control. |
+| Requested next step | Must be explicitly confirmed by the person before the draft can qualify as an inquiry. |
+| Direct project response | Human-only permission governing whether Village Alchemist may respond about this specific fictional inquiry. |
+| Ongoing updates | Separate optional permission, human-only and off by default; never bundled with project response. |
+| Withheld information | The category may appear as withheld, but its value is absent from the review, tool result, and receipt. |
+| Outside the inquiry | Unrelated private conversation, payment details, precise live location, and other unnecessary personal information are rejected rather than retained. |
+
+An optional value may remain in the person’s local editable draft while its
+disclosure control is off. That value is not copied into the frozen review or
+receipt.
+
+## Provenance
+
+The page distinguishes:
+
+- person-provided values;
+- assistant-suggested values;
+- automatically captured entry or referral context; and
+- values the person explicitly verified.
+
+Knowing a value does not grant permission to disclose it. A value typed in chat or
+visible elsewhere remains subject to this page’s current field and permission
+rules. The agent cannot mark its own suggestion as human-verified.
+
+The receipt preserves provenance for the values in the approved snapshot. The
+activity timeline keeps only actor, action, outcome, and field names so it does not
+become a second store of inquiry values.
+
+## Agent knowledge is not authority
 
 For WebMCP:
 
-- `get_intake_requirements` returns policy and field names, not draft values;
-- unauthorized optional input rejects the entire agent draft;
-- `prepare_submission_review` returns only the candidate frozen disclosure;
-- `submit_approved_intake` returns identifiers and confirmation, not a broader
-  copy of local state; and
-- `get_disclosure_receipt` returns only the finalized snapshot and its audit
-  metadata.
+- `get_intake_requirements` returns the current field and permission policy, not a
+  hidden copy of the draft;
+- `draft_intake` rejects unknown or unauthorized information atomically;
+- `prepare_submission_review` returns the candidate frozen disclosure but grants
+  no approval;
+- `submit_approved_intake` requires a matching visible human approval; and
+- `get_disclosure_receipt` returns only the finalized browser-local record.
 
-This boundary controls Permission Slip's accepted inputs and tool outputs. It
-does not revoke information from the agent, prevent visual page inspection, or
-control copies already present in chat history.
+No tool can verify a value for the person, confirm the requested next step, change
+response permissions, approve a review, return to editing, or reset the demo.
+
+This boundary controls only Permission Slip’s accepted inputs and outputs. It does
+not erase information from chat history, prevent visual page inspection, or
+control copies held by an external agent provider.
 
 ## Snapshot approval
 
-Review preparation validates and normalizes the draft, then builds a snapshot in
-a stable field order:
+Review preparation validates and normalizes the inquiry, applies the human’s
+current permission choices, and freezes:
 
-1. include all six required fields;
-2. include each optional field only when authorized and present;
-3. record disclosed, authorized-optional, and withheld-optional field names;
-4. canonicalize the snapshot;
-5. compute a SHA-256 digest with Web Crypto; and
-6. freeze the snapshot with a unique `reviewId` and current draft revision.
+- the exact values to be finalized;
+- field provenance and human-verification state;
+- the confirmed requested next step;
+- direct project-response permission;
+- optional ongoing-update permission;
+- the destination and local-only consequence;
+- the current draft revision;
+- a unique review ID; and
+- a SHA-256 digest over the canonical snapshot.
 
-Only the visible human UI can create an approval. The approval records the exact
-review ID, revision, and digest. Any successful draft edit, agent replacement,
-authorization change, or return to editing clears the review and approval.
-Submission validates the current draft again, rebuilds and compares the canonical
-snapshot, recomputes the digest, and requires the review and approval to match.
+Only the visible page can record approval. Any disclosure-affecting edit,
+verification change, requested-next-step change, or permission change invalidates
+the review and approval. Finalization checks the binding again and consumes the
+frozen review, not live form values.
 
 ## What the digest means
 
-The digest is a deterministic change detector for the canonical disclosure used
-by this local workflow. It lets the application verify that the value being
-finalized matches the value it reviewed.
+The digest is a deterministic consistency check for the canonical browser-local
+snapshot.
 
-The digest does **not** prove:
+It does **not** prove:
 
 - who clicked Approve;
-- that the human understood the disclosure;
+- that the person understood the review;
 - that the page or browser was uncompromised;
 - that `localStorage` was not edited;
 - when an event occurred independently of the local clock; or
@@ -79,33 +113,29 @@ It is not a signature, credential, identity assertion, or tamper-proof audit log
 
 ## Storage and transmission
 
-Drafts, authorization flags, reviews, approvals, receipts, provenance, and
-activity are stored in a versioned `localStorage` envelope for the page's origin.
-State is parsed defensively on load, and inconsistent or unsupported persisted
-data is discarded. Tabs on the same origin synchronize before operations and on
-storage events. If storage is blocked or unavailable, the workflow remains
-in-memory and will not survive reload.
+Drafts, permissions, reviews, approvals, provenance, activity, and receipts are
+stored in a versioned `localStorage` envelope for the page’s origin. State is
+parsed defensively on load, and inconsistent or unsupported data is discarded.
+Tabs on the same origin synchronize before operations and on storage events.
 
-Drafting, reviewing, approving, submitting, reading a receipt, and resetting do
-not initiate an application network request. Submission is simulated: it appends
-a local receipt whose destination is `Local demonstration only` and whose
-statement is `No network transmission occurred.` Normal loading of deployed HTML,
+If browser storage is blocked or unavailable, the workflow remains in memory and
+does not survive reload. Reset clears this application’s persisted state but
+cannot erase screenshots, browser backups, extensions, chat history, developer
+tool copies, or data held by an external agent provider.
+
+Drafting, reviewing, approving, simulated submission, receipt lookup, and reset do
+not initiate an application network request. The receipt’s destination is local
+demonstration state on the current browser origin. Normal loading of hosted HTML,
 CSS, and JavaScript assets still uses the network.
-
-Reset removes the persisted demonstration state. It cannot erase copies from
-browser backups, extensions, screenshots, chat history, developer tools, or an
-external agent provider.
 
 ## Honest threat boundary
 
 Permission Slip relies on the integrity of the browser page and its JavaScript.
-It has no backend, database, authentication, access control service, trusted
-clock, signed log, remote destination, analytics, telemetry, or OpenAI API call.
-Anyone able to run script in the page's origin or edit browser storage can bypass
-or rewrite local state.
+It has no backend, database, authentication, access-control service, trusted clock,
+signed log, remote destination, analytics, telemetry, email delivery, or OpenAI
+API call. Anyone able to run script in the page’s origin or edit browser storage
+can bypass or rewrite local state.
 
-The missing approval WebMCP tool deliberately keeps approval outside the agent
-tool contract. It does not guarantee that general-purpose browser automation
-cannot click the visible approval control. Likewise, ChatGPT or another agent may
-process chat messages, tool arguments, and tool results according to that
-provider's own terms. Use only fictional data in this demonstration.
+Keeping approval and permission controls out of WebMCP is a deliberate product
+boundary. It does not guarantee that general-purpose browser automation cannot
+activate a visible control. Use only the fictional Maya Chen rehearsal data.

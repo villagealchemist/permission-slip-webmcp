@@ -1,9 +1,14 @@
 import {
+  CONTACT_PERMISSION_NAMES,
+  INQUIRY_TYPES,
   INTAKE_FIELD_NAMES,
   OPTIONAL_FIELD_NAMES,
+  PREFERRED_RESPONSE_METHODS,
+  REQUESTED_NEXT_STEPS,
   REQUIRED_FIELD_NAMES,
-  type DisclosureSnapshot,
-  type IntakeDraft,
+  type ContactPermissionName,
+  type InquiryDraft,
+  type InquirySnapshot,
   type IntakeFieldName,
   type OptionalDisclosureAuthorizations,
   type OptionalFieldName,
@@ -12,18 +17,19 @@ import {
 
 const FIELD_NAME_SET = new Set<string>(INTAKE_FIELD_NAMES)
 const OPTIONAL_FIELD_SET = new Set<string>(OPTIONAL_FIELD_NAMES)
-const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const CONTACT_PERMISSION_SET = new Set<string>(CONTACT_PERMISSION_NAMES)
+const INQUIRY_TYPE_SET = new Set<string>(INQUIRY_TYPES)
+const RESPONSE_METHOD_SET = new Set<string>(PREFERRED_RESPONSE_METHODS)
+const NEXT_STEP_SET = new Set<string>(REQUESTED_NEXT_STEPS)
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 const PHONE_PATTERN = /^[0-9+().\-\s]{7,40}$/
 
-/** Fully normalized agent proposal accepted as one atomic replacement. */
 export interface AgentDraftValidationSuccess {
   ok: true
-  draft: DisclosureSnapshot
+  draft: InquirySnapshot
   suppliedFields: IntakeFieldName[]
 }
 
-/** Rejection classification used to distinguish consent from shape failures. */
 export interface AgentDraftValidationFailure {
   ok: false
   kind: 'invalid' | 'unauthorized' | 'unknown'
@@ -31,26 +37,22 @@ export interface AgentDraftValidationFailure {
   issues: ValidationIssue[]
 }
 
-/** Agent validation never returns a partially accepted draft. */
 export type AgentDraftValidation =
   | AgentDraftValidationSuccess
   | AgentDraftValidationFailure
 
-/** Completeness result used at both review creation and submission revalidation. */
 export interface CompleteDraftValidation {
   valid: boolean
-  normalizedDraft?: DisclosureSnapshot
+  normalizedDraft?: InquirySnapshot
   issues: ValidationIssue[]
 }
 
-/** Type-safe incremental patch accepted from the human form. */
 export interface HumanPatchValidationSuccess {
   ok: true
-  patch: IntakeDraft
+  patch: InquiryDraft
   suppliedFields: IntakeFieldName[]
 }
 
-/** Human patch rejection leaves the existing draft untouched. */
 export interface HumanPatchValidationFailure {
   ok: false
   kind: 'invalid' | 'unknown'
@@ -58,7 +60,6 @@ export interface HumanPatchValidationFailure {
   issues: ValidationIssue[]
 }
 
-/** Human edits may be partial, but each supplied property is accepted atomically. */
 export type HumanPatchValidation =
   | HumanPatchValidationSuccess
   | HumanPatchValidationFailure
@@ -73,20 +74,6 @@ function knownFieldNames(value: Record<string, unknown>): IntakeFieldName[] {
   )
 }
 
-function validateDate(value: string): boolean {
-  if (!ISO_DATE_PATTERN.test(value)) {
-    return false
-  }
-
-  const [year, month, day] = value.split('-').map(Number)
-  const parsed = new Date(Date.UTC(year, month - 1, day))
-  return (
-    parsed.getUTCFullYear() === year &&
-    parsed.getUTCMonth() === month - 1 &&
-    parsed.getUTCDate() === day
-  )
-}
-
 function stringIssue(
   field: IntakeFieldName,
   value: unknown,
@@ -94,26 +81,40 @@ function stringIssue(
   maximum: number,
 ): ValidationIssue | null {
   if (typeof value !== 'string') {
-    return {
-      field,
-      code: 'type',
-      message: `${field} must be a string.`,
-    }
+    return { field, code: 'type', message: `${field} must be a string.` }
   }
 
   const length = value.trim().length
-  if (length < minimum || length > maximum) {
-    return {
-      field,
-      code: 'range',
-      message: `${field} must contain between ${minimum} and ${maximum} characters.`,
-    }
-  }
-
-  return null
+  return length >= minimum && length <= maximum
+    ? null
+    : {
+        field,
+        code: 'range',
+        message: `${field} must contain between ${minimum} and ${maximum} characters.`,
+      }
 }
 
-function validateField(field: IntakeFieldName, value: unknown): ValidationIssue | null {
+function enumIssue(
+  field: IntakeFieldName,
+  value: unknown,
+  allowed: ReadonlySet<string>,
+): ValidationIssue | null {
+  if (typeof value !== 'string') {
+    return { field, code: 'type', message: `${field} must be a string.` }
+  }
+  return allowed.has(value.trim())
+    ? null
+    : {
+        field,
+        code: 'format',
+        message: `${field} must use one of the documented values.`,
+      }
+}
+
+function validateField(
+  field: IntakeFieldName,
+  value: unknown,
+): ValidationIssue | null {
   switch (field) {
     case 'contactName':
       return stringIssue(field, value, 2, 100)
@@ -122,61 +123,49 @@ function validateField(field: IntakeFieldName, value: unknown): ValidationIssue 
       if (issue) return issue
       return EMAIL_PATTERN.test((value as string).trim())
         ? null
-        : { field, code: 'format', message: 'email must be a valid email address.' }
-    }
-    case 'eventType':
-      return stringIssue(field, value, 3, 160)
-    case 'preferredDate': {
-      const issue = stringIssue(field, value, 10, 10)
-      if (issue) return issue
-      return validateDate((value as string).trim())
-        ? null
-        : { field, code: 'format', message: 'preferredDate must use a valid YYYY-MM-DD date.' }
-    }
-    case 'estimatedAttendeeCount':
-      if (typeof value !== 'number' || !Number.isInteger(value)) {
-        return {
-          field,
-          code: 'type',
-          message: 'estimatedAttendeeCount must be a whole number.',
-        }
-      }
-      return value >= 1 && value <= 1_000
-        ? null
         : {
             field,
-            code: 'range',
-            message: 'estimatedAttendeeCount must be between 1 and 1,000.',
+            code: 'format',
+            message: 'email must be a valid email address.',
           }
-    case 'eventGoal':
-      return stringIssue(field, value, 10, 1_000)
+    }
+    case 'inquiryType':
+      return enumIssue(field, value, INQUIRY_TYPE_SET)
+    case 'desiredOutcome':
+      return stringIssue(field, value, 10, 1_500)
+    case 'relevantBackground':
+      return stringIssue(field, value, 10, 2_000)
+    case 'timeline':
+      return stringIssue(field, value, 2, 200)
+    case 'preferredResponseMethod':
+      return enumIssue(field, value, RESPONSE_METHOD_SET)
+    case 'requestedNextStep':
+      return enumIssue(field, value, NEXT_STEP_SET)
     case 'phone': {
       const issue = stringIssue(field, value, 7, 40)
       if (issue) return issue
       return PHONE_PATTERN.test((value as string).trim())
         ? null
-        : { field, code: 'format', message: 'phone contains unsupported characters.' }
+        : {
+            field,
+            code: 'format',
+            message: 'phone contains unsupported characters.',
+          }
     }
-    case 'budgetRange':
-      return stringIssue(field, value, 1, 120)
-    case 'socialHandle':
-      return stringIssue(field, value, 1, 100)
-    case 'additionalNotes':
+    case 'budgetOrConstraints':
+      return stringIssue(field, value, 1, 500)
+    case 'organization':
+      return stringIssue(field, value, 1, 160)
+    case 'additionalContext':
       return stringIssue(field, value, 1, 2_000)
   }
 }
 
-function normalizedValue(field: IntakeFieldName, value: unknown): string | number {
-  return field === 'estimatedAttendeeCount'
-    ? (value as number)
-    : (value as string).trim()
+function normalizedValue(value: unknown): string {
+  return (value as string).trim()
 }
 
-/**
- * Validates an agent's complete replacement before any state mutation. Unknown
- * or unauthorized optional fields reject the entire proposal so a caller
- * cannot turn a consent violation into a silently accepted subset.
- */
+/** Atomically validates a complete assistant-proposed replacement. */
 export function validateAgentDraftInput(
   input: unknown,
   authorizations: OptionalDisclosureAuthorizations,
@@ -190,13 +179,15 @@ export function validateAgentDraftInput(
         {
           field: '$',
           code: 'type',
-          message: 'The draft input must be an object.',
+          message: 'The inquiry draft must be an object.',
         },
       ],
     }
   }
 
-  const unknownFields = Object.keys(input).filter((field) => !FIELD_NAME_SET.has(field))
+  const unknownFields = Object.keys(input).filter(
+    (field) => !FIELD_NAME_SET.has(field),
+  )
   if (unknownFields.length > 0) {
     return {
       ok: false,
@@ -208,7 +199,8 @@ export function validateAgentDraftInput(
 
   const unauthorizedFields = Object.keys(input).filter(
     (field): field is OptionalFieldName =>
-      OPTIONAL_FIELD_SET.has(field) && !authorizations[field as OptionalFieldName],
+      OPTIONAL_FIELD_SET.has(field) &&
+      !authorizations[field as OptionalFieldName],
   )
   if (unauthorizedFields.length > 0) {
     return {
@@ -219,10 +211,9 @@ export function validateAgentDraftInput(
     }
   }
 
-  const missingFields = REQUIRED_FIELD_NAMES.filter(
+  const issues: ValidationIssue[] = REQUIRED_FIELD_NAMES.filter(
     (field) => !Object.prototype.hasOwnProperty.call(input, field),
-  )
-  const issues: ValidationIssue[] = missingFields.map((field) => ({
+  ).map((field) => ({
     field,
     code: 'missing',
     message: `${field} is required.`,
@@ -242,22 +233,18 @@ export function validateAgentDraftInput(
     }
   }
 
+  const suppliedFields = knownFieldNames(input)
   const draft = Object.fromEntries(
-    knownFieldNames(input).map((field) => [field, normalizedValue(field, input[field])]),
-  ) as unknown as DisclosureSnapshot
+    suppliedFields.map((field) => [field, normalizedValue(input[field])]),
+  ) as unknown as InquirySnapshot
 
-  return {
-    ok: true,
-    draft,
-    suppliedFields: knownFieldNames(input),
-  }
+  return { ok: true, draft, suppliedFields }
 }
 
-/**
- * Revalidates and normalizes the whole draft at trust boundaries. This keeps a
- * persisted or incrementally edited value from bypassing review requirements.
- */
-export function validateCompleteDraft(draft: IntakeDraft): CompleteDraftValidation {
+/** Revalidates the complete draft at review and execution boundaries. */
+export function validateCompleteDraft(
+  draft: InquiryDraft,
+): CompleteDraftValidation {
   const issues: ValidationIssue[] = []
 
   for (const field of REQUIRED_FIELD_NAMES) {
@@ -277,25 +264,22 @@ export function validateCompleteDraft(draft: IntakeDraft): CompleteDraftValidati
     if (issue) issues.push(issue)
   }
 
-  if (issues.length > 0) {
-    return { valid: false, issues }
-  }
+  if (issues.length > 0) return { valid: false, issues }
 
   const normalizedDraft = Object.fromEntries(
     INTAKE_FIELD_NAMES.flatMap((field) => {
       const value = draft[field]
-      return value === undefined ? [] : [[field, normalizedValue(field, value)]]
+      return value === undefined ? [] : [[field, normalizedValue(value)]]
     }),
-  ) as unknown as DisclosureSnapshot
+  ) as unknown as InquirySnapshot
 
   return { valid: true, normalizedDraft, issues: [] }
 }
 
-/**
- * Validates human editing types while allowing temporary incompleteness; an
- * empty or undefined supplied value intentionally clears that field.
- */
-export function validateHumanDraftPatch(input: unknown): HumanPatchValidation {
+/** Human edits may be incomplete, but the patch itself is atomic and bounded. */
+export function validateHumanDraftPatch(
+  input: unknown,
+): HumanPatchValidation {
   if (!isRecord(input)) {
     return {
       ok: false,
@@ -305,13 +289,15 @@ export function validateHumanDraftPatch(input: unknown): HumanPatchValidation {
         {
           field: '$',
           code: 'type',
-          message: 'The draft update must be an object.',
+          message: 'The inquiry update must be an object.',
         },
       ],
     }
   }
 
-  const unknownFields = Object.keys(input).filter((field) => !FIELD_NAME_SET.has(field))
+  const unknownFields = Object.keys(input).filter(
+    (field) => !FIELD_NAME_SET.has(field),
+  )
   if (unknownFields.length > 0) {
     return {
       ok: false,
@@ -323,7 +309,7 @@ export function validateHumanDraftPatch(input: unknown): HumanPatchValidation {
 
   const suppliedFields = knownFieldNames(input)
   const issues: ValidationIssue[] = []
-  const patch: IntakeDraft = {}
+  const patch: InquiryDraft = {}
 
   for (const field of suppliedFields) {
     const value = input[field]
@@ -332,21 +318,12 @@ export function validateHumanDraftPatch(input: unknown): HumanPatchValidation {
       continue
     }
 
-    if (field === 'estimatedAttendeeCount') {
-      if (typeof value !== 'number' || !Number.isFinite(value)) {
-        issues.push({
-          field,
-          code: 'type',
-          message: 'estimatedAttendeeCount must be a number while editing.',
-        })
-      } else {
-        patch[field] = value
-      }
-      continue
-    }
-
     if (typeof value !== 'string') {
-      issues.push({ field, code: 'type', message: `${field} must be a string.` })
+      issues.push({
+        field,
+        code: 'type',
+        message: `${field} must be a string.`,
+      })
     } else if (value.length > 4_000) {
       issues.push({
         field,
@@ -354,7 +331,7 @@ export function validateHumanDraftPatch(input: unknown): HumanPatchValidation {
         message: `${field} is too long to store in this demonstration.`,
       })
     } else {
-      patch[field] = value
+      patch[field] = value as never
     }
   }
 
@@ -368,12 +345,16 @@ export function validateHumanDraftPatch(input: unknown): HumanPatchValidation {
     : { ok: true, patch, suppliedFields }
 }
 
-/** Runtime guard for values crossing storage and tool boundaries. */
 export function isIntakeFieldName(value: string): value is IntakeFieldName {
   return FIELD_NAME_SET.has(value)
 }
 
-/** Runtime guard for fields governed by explicit disclosure authorization. */
 export function isOptionalFieldName(value: string): value is OptionalFieldName {
   return OPTIONAL_FIELD_SET.has(value)
+}
+
+export function isContactPermissionName(
+  value: string,
+): value is ContactPermissionName {
+  return CONTACT_PERMISSION_SET.has(value)
 }

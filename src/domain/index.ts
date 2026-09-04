@@ -1,6 +1,6 @@
 /**
- * Framework-independent consent policy and state transitions shared by every
- * delivery surface.
+ * Consent policy and state transitions shared by this demo's form and five
+ * in-page inquiry tools.
  *
  * @packageDocumentation
  */

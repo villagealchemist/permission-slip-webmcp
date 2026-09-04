@@ -1,72 +1,85 @@
-import { REQUIRED_FIELD_NAMES } from '../domain'
+import {
+  INQUIRY_TYPES,
+  PREFERRED_RESPONSE_METHODS,
+  REQUESTED_NEXT_STEPS,
+  REQUIRED_FIELD_NAMES,
+} from '../domain'
 import type { JsonSchema } from './defineContract'
 
-/** Canonical externally visible constraints for accepted intake values. */
+/** Canonical externally visible constraints for one Village Alchemist inquiry. */
 export const INTAKE_FIELD_SCHEMAS = {
   contactName: {
     type: 'string',
-    description: 'Name of the person making the workshop inquiry.',
+    description: 'Name of the person asking Village Alchemist to respond.',
     minLength: 2,
     maxLength: 100,
   },
   email: {
     type: 'string',
-    description: 'Contact email address for the inquiry.',
+    description: 'Email address for the requested project response.',
     format: 'email',
     minLength: 3,
     maxLength: 254,
   },
-  eventType: {
+  inquiryType: {
     type: 'string',
-    description: 'Short name for the proposed event or workshop.',
-    minLength: 3,
-    maxLength: 160,
+    description: 'The kind of Village Alchemist project inquiry.',
+    enum: INQUIRY_TYPES,
   },
-  preferredDate: {
+  desiredOutcome: {
     type: 'string',
-    description: 'Preferred event date in YYYY-MM-DD format.',
-    format: 'date',
+    description: 'The concrete result the person wants the project to produce.',
     minLength: 10,
-    maxLength: 10,
+    maxLength: 1_500,
   },
-  estimatedAttendeeCount: {
-    type: 'integer',
-    description: 'Estimated number of attendees, from 1 through 1,000.',
-    minimum: 1,
-    maximum: 1_000,
-  },
-  eventGoal: {
+  relevantBackground: {
     type: 'string',
-    description: 'What the event is intended to accomplish.',
+    description: 'Existing context needed to make a first response useful.',
     minLength: 10,
-    maxLength: 1_000,
+    maxLength: 2_000,
+  },
+  timeline: {
+    type: 'string',
+    description: 'The target window, deadline, or current timing constraint.',
+    minLength: 2,
+    maxLength: 200,
+  },
+  preferredResponseMethod: {
+    type: 'string',
+    description: 'How the person would prefer Village Alchemist to respond.',
+    enum: PREFERRED_RESPONSE_METHODS,
+  },
+  requestedNextStep: {
+    type: 'string',
+    description: 'The specific business next step the person is requesting.',
+    enum: REQUESTED_NEXT_STEPS,
   },
   phone: {
     type: 'string',
     description:
-      'Optional contact phone. Include only when phone disclosure is currently authorized in the webpage.',
+      'Optional callback number. Include only after the person authorizes this disclosure in the webpage.',
     minLength: 7,
     maxLength: 40,
     pattern: '^[0-9+().\\-\\s]+$',
   },
-  budgetRange: {
+  budgetOrConstraints: {
     type: 'string',
     description:
-      'Optional budget range. Include only when budget disclosure is currently authorized in the webpage.',
+      'Optional planning boundaries. Include only after the person authorizes this disclosure in the webpage.',
     minLength: 1,
-    maxLength: 120,
+    maxLength: 500,
   },
-  socialHandle: {
+  organization: {
     type: 'string',
     description:
-      'Optional social handle. Include only when social-handle disclosure is currently authorized in the webpage.',
+      'Optional organization name. Include only after the person authorizes this disclosure in the webpage.',
     minLength: 1,
-    maxLength: 100,
+    maxLength: 160,
   },
-  additionalNotes: {
+  additionalContext: {
     type: 'string',
     description:
-      'Optional notes relevant to the event. Include only when notes disclosure is currently authorized in the webpage.',
+      'Optional extra project context. Include only after the person authorizes this disclosure in the webpage.',
     minLength: 1,
     maxLength: 2_000,
   },
@@ -75,7 +88,7 @@ export const INTAKE_FIELD_SCHEMAS = {
 /** Required draft property names, shared with the domain model. */
 export const REQUIRED_DRAFT_PROPERTIES = REQUIRED_FIELD_NAMES
 
-/** Schema for opaque review and receipt identifiers. */
+/** Schema for opaque review, receipt, and submission identifiers. */
 export const OPAQUE_ID_SCHEMA = {
   type: 'string',
   minLength: 1,
@@ -83,7 +96,7 @@ export const OPAQUE_ID_SCHEMA = {
   pattern: '^[A-Za-z0-9._-]+$',
 } as const satisfies JsonSchema
 
-/** Complete disclosed snapshot: six required values plus authorized optionals. */
+/** Complete qualified inquiry values plus any present authorized optionals. */
 export const DISCLOSURE_SNAPSHOT_SCHEMA = {
   type: 'object',
   properties: INTAKE_FIELD_SCHEMAS,

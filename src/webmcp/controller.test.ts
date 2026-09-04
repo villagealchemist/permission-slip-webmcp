@@ -9,12 +9,23 @@ import {
 const validDraft = {
   contactName: 'Maya Chen',
   email: 'maya.chen@example.com',
-  eventType: 'Creative coding and mentorship workshop',
-  preferredDate: '2026-10-10',
-  estimatedAttendeeCount: 20,
-  eventGoal:
-    'Pair early-career developers with local mentors for a collaborative workshop',
-}
+  inquiryType: 'prototype',
+  desiredOutcome: 'A browser prototype for a focused inquiry workflow.',
+  relevantBackground:
+    'A fictional creative-technology project needs a useful initial response.',
+  timeline: 'A first slice within four weeks.',
+  preferredResponseMethod: 'email',
+  requestedNextStep: 'written_response',
+} as const
+
+const optionalFields = [
+  'phone',
+  'budgetOrConstraints',
+  'organization',
+  'additionalContext',
+] as const
+
+const requiredFields = Object.keys(validDraft) as Array<keyof typeof validDraft>
 
 function createAdapter(): PermissionSlipWebMcpAdapter {
   return {
@@ -23,44 +34,37 @@ function createAdapter(): PermissionSlipWebMcpAdapter {
     >(() => ({
       ok: true,
       data: {
-        requiredFields: [
-          'contactName',
-          'email',
-          'eventType',
-          'preferredDate',
-          'estimatedAttendeeCount',
-          'eventGoal',
-        ],
-        optionalFields: [
-          'phone',
-          'budgetRange',
-          'socialHandle',
-          'additionalNotes',
-        ],
+        requiredFields,
+        optionalFields: [...optionalFields],
         authorizedOptionalFields: [],
         neverCollectedFields: ['payment information'],
         workflowStatus: 'empty',
+        nextStepIntentConfirmed: false,
+        contactPermissions: {
+          projectResponse: false,
+          occasionalUpdates: false,
+        },
+        unverifiedAssistantFields: [],
+        humanOnlyRequirements: {
+          assistantSuggestionVerification: {
+            required: true,
+            complete: true,
+            unverifiedFields: [],
+          },
+          requestedNextStepIntent: { required: true, confirmed: false },
+          projectResponsePermission: { required: true, granted: false },
+          exactReviewApproval: { required: true, granted: false },
+        },
         instructions: 'Draft, review, then wait for human approval.',
       },
     })),
     draftIntake: vi.fn<PermissionSlipWebMcpAdapter['draftIntake']>(() => ({
       ok: true,
       data: {
-        acceptedFields: [
-          'contactName',
-          'email',
-          'eventType',
-          'preferredDate',
-          'estimatedAttendeeCount',
-          'eventGoal',
-        ],
-        withheldFields: [
-          'phone',
-          'budgetRange',
-          'socialHandle',
-          'additionalNotes',
-        ],
+        acceptedFields: requiredFields,
+        withheldFields: [...optionalFields],
         workflowStatus: 'draft',
+        revision: 1,
         nextRecommendedAction: 'Prepare a review.',
       },
     })),
@@ -70,16 +74,32 @@ function createAdapter(): PermissionSlipWebMcpAdapter {
       ok: true,
       data: {
         reviewId: 'review-1',
-        digest: 'abc123',
-        reviewSummary: {
-          fieldsDisclosed: validDraft,
-          optionalFieldsWithheld: [
-            'phone',
-            'budgetRange',
-            'socialHandle',
-            'additionalNotes',
-          ],
+        digest: '0'.repeat(64),
+        revision: 1,
+        workflowStatus: 'review_pending',
+        frozenSnapshot: validDraft,
+        disclosedFields: requiredFields,
+        authorizedOptionalFields: [],
+        withheldOptionalFields: [...optionalFields],
+        optionalDisclosureAuthorizations: {
+          phone: false,
+          budgetOrConstraints: false,
+          organization: false,
+          additionalContext: false,
         },
+        contactPermissions: {
+          projectResponse: true,
+          occasionalUpdates: false,
+        },
+        permissionsGranted: ['projectResponse'],
+        permissionsWithheld: ['occasionalUpdates'],
+        nextStepIntentConfirmed: true,
+        inquiryProvenance: {
+          entrySource: 'webmcp',
+          referralSource: null,
+          campaign: null,
+        },
+        fieldProvenance: {},
         humanApprovalRequired: 'Approve this exact review in the webpage.',
       },
     })),
@@ -89,9 +109,11 @@ function createAdapter(): PermissionSlipWebMcpAdapter {
       ok: true,
       data: {
         confirmation: 'The approved intake was finalized locally.',
+        submissionId: 'submission-1',
         receiptId: 'receipt-1',
         reviewId: 'review-1',
         workflowStatus: 'submitted',
+        idempotentReplay: false,
       },
     })),
     getDisclosureReceipt: vi.fn<
@@ -100,19 +122,40 @@ function createAdapter(): PermissionSlipWebMcpAdapter {
       ok: true,
       data: {
         receiptId: 'receipt-1',
+        submissionId: 'submission-1',
         reviewId: 'review-1',
+        reviewRevision: 1,
+        reviewDigest: '0'.repeat(64),
         submissionTimestamp: '2026-09-03T16:00:00.000Z',
+        outcome: 'accepted',
+        status: 'qualified_inquiry_created',
+        destination: 'Village Alchemist project inquiry desk (simulated)',
+        requestedNextStep: 'written_response',
+        permissionsGranted: ['projectResponse'],
+        permissionsWithheld: ['occasionalUpdates'],
+        inquiryProvenance: {
+          entrySource: 'webmcp',
+          referralSource: null,
+          campaign: null,
+        },
+        frozenSnapshot: validDraft,
         fieldsDisclosed: validDraft,
-        optionalFieldsWithheld: [
-          'phone',
-          'budgetRange',
-          'socialHandle',
-          'additionalNotes',
+        disclosedFieldNames: requiredFields,
+        optionalFieldsWithheld: [...optionalFields],
+        neverCollectedCategories: [
+          'streetAddress',
+          'employmentHistory',
+          'preciseLiveLocation',
+          'paymentInformation',
+          'unrelatedPrivateConversationHistory',
         ],
-        neverCollectedCategories: ['payment information'],
-        snapshotDigest: 'abc123',
-        destination: 'Local demonstration only',
-        networkTransmissionOccurred: false,
+        snapshotDigest: '0'.repeat(64),
+        fieldProvenance: {},
+        contactPermissions: {
+          projectResponse: true,
+          occasionalUpdates: false,
+        },
+        noNetworkTransmission: true,
         statement: 'No network transmission occurred.',
       },
     })),
@@ -209,7 +252,7 @@ describe('Permission Slip WebMCP registration', () => {
     expect(draftTool).toBeDefined()
 
     const result = await draftTool?.execute(
-      { ...validDraft, preferredDate: '2026-02-30', secret: 'not allowed' },
+      { ...validDraft, inquiryType: 'invalid_type', secret: 'not allowed' },
       { signal: new AbortController().signal },
     )
 
@@ -225,7 +268,7 @@ describe('Permission Slip WebMCP registration', () => {
               code: 'unknown_property',
             }),
             expect.objectContaining({
-              path: 'preferredDate',
+              path: 'inquiryType',
               code: 'invalid_format',
             }),
           ]),

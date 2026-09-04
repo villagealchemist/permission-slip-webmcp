@@ -1,46 +1,65 @@
 import {
   ACTIVITY_LIMIT,
+  DEFAULT_INQUIRY_PROVENANCE,
+  EMPTY_CONTACT_PERMISSIONS,
   EMPTY_OPTIONAL_AUTHORIZATIONS,
   INTAKE_REQUIREMENTS_INSTRUCTIONS,
   NEVER_COLLECTED_DEFINITIONS,
   OPTIONAL_FIELD_DEFINITIONS,
   REQUIRED_FIELD_DEFINITIONS,
 } from './constants'
-import { buildDisclosureSnapshot, canonicalSerialize, sha256Digest } from './canonical'
 import {
+  buildDisclosureSnapshot,
+  canonicalSerializeReviewPayload,
+  sha256Digest,
+} from './canonical'
+import {
+  CONTACT_PERMISSION_NAMES,
   INTAKE_FIELD_NAMES,
   NEVER_COLLECTED_NAMES,
   OPTIONAL_FIELD_NAMES,
+  REQUESTED_NEXT_STEPS,
+  SIMULATED_INQUIRY_DESTINATION,
   type ActivityAction,
   type ActivityActor,
   type ActivityEntry,
   type ApprovalInput,
   type ApprovalResult,
+  type AssistantVerificationResult,
+  type ContactPermissionName,
+  type ContactPermissionResult,
+  type ContactPermissions,
   type DisclosureAuthorizationResult,
-  type DisclosureReceipt,
   type DomainDependencies,
   type DomainError,
   type DomainErrorCode,
   type DraftIntakeResult,
+  type FailedSubmissionReceipt,
+  type FieldProvenance,
   type HumanDraftUpdateResult,
-  type IntakeDraft,
+  type InquiryDraft,
+  type InquiryProvenance,
+  type InquiryReviewPayload,
   type IntakeFieldName,
   type IntakeRequirements,
+  type NextStepIntentResult,
   type OperationResult,
   type PermissionSlipState,
   type PreparedReviewResult,
   type ResetResult,
   type ReturnToEditingResult,
   type SubmissionResult,
+  type SuccessfulSubmissionReceipt,
 } from './types'
 import {
+  isContactPermissionName,
   isOptionalFieldName,
   validateAgentDraftInput,
   validateCompleteDraft,
   validateHumanDraftPatch,
 } from './validation'
 
-function defaultId(kind: 'activity' | 'review' | 'receipt'): string {
+function defaultId(kind: Parameters<DomainDependencies['createId']>[0]): string {
   const uuid = globalThis.crypto?.randomUUID?.()
   if (uuid) return `${kind}_${uuid}`
 
@@ -64,17 +83,12 @@ function deepFreeze<T>(value: T): T {
   return Object.freeze(value)
 }
 
-/**
- * Recursively freezes snapshots before they cross the store boundary. Stable,
- * immutable references let React and concurrent-operation guards detect change.
- */
 export function freezePermissionSlipState(
   state: PermissionSlipState,
 ): PermissionSlipState {
   return deepFreeze(state)
 }
 
-/** Supplies browser defaults while permitting deterministic tests. */
 export function createDomainDependencies(
   overrides: Partial<DomainDependencies> = {},
 ): DomainDependencies {
@@ -86,15 +100,18 @@ export function createDomainDependencies(
   }
 }
 
-/** Creates the privacy-preserving baseline with all optional fields withheld. */
+/** Version 2 intentionally invalidates the earlier demo representation. */
 export function createInitialState(): PermissionSlipState {
   return freezePermissionSlipState({
-    stateVersion: 1,
+    stateVersion: 2,
     status: 'empty',
     draft: {},
     fieldProvenance: {},
     revision: 0,
     optionalDisclosureAuthorizations: { ...EMPTY_OPTIONAL_AUTHORIZATIONS },
+    nextStepIntentConfirmed: false,
+    contactPermissions: { ...EMPTY_CONTACT_PERMISSIONS },
+    inquiryProvenance: { ...DEFAULT_INQUIRY_PROVENANCE },
     review: null,
     approval: null,
     receipts: [],
@@ -118,7 +135,6 @@ function appendActivity(
     outcome,
     fieldNames: [...fieldNames],
   }
-
   return {
     ...state,
     activity: [...state.activity, entry].slice(-ACTIVITY_LIMIT),
@@ -134,12 +150,12 @@ function rejected<T>(
   dependencies: DomainDependencies,
   actor: ActivityActor,
   action: ActivityAction,
-  error: DomainError,
+  domainError: DomainError,
   safeFieldNames: IntakeFieldName[] = [],
 ): OperationResult<T> {
   return {
     ok: false,
-    error,
+    error: domainError,
     state: freezePermissionSlipState(
       appendActivity(
         state,
@@ -162,7 +178,7 @@ function error(
   return { code, message, retry, ...options }
 }
 
-function editingStatus(draft: IntakeDraft): 'empty' | 'draft' {
+function editingStatus(draft: InquiryDraft): 'empty' | 'draft' {
   return INTAKE_FIELD_NAMES.some((field) => draft[field] !== undefined)
     ? 'draft'
     : 'empty'
@@ -170,7 +186,7 @@ function editingStatus(draft: IntakeDraft): 'empty' | 'draft' {
 
 function invalidatedEditingState(
   state: PermissionSlipState,
-  draft: IntakeDraft,
+  draft: InquiryDraft,
 ): PermissionSlipState {
   return {
     ...state,
@@ -182,9 +198,13 @@ function invalidatedEditingState(
   }
 }
 
+function sameDraft(left: InquiryDraft, right: InquiryDraft): boolean {
+  return INTAKE_FIELD_NAMES.every((field) => Object.is(left[field], right[field]))
+}
+
 function provenanceForAgentReplacement(
   state: PermissionSlipState,
-  nextDraft: IntakeDraft,
+  nextDraft: InquiryDraft,
   suppliedFields: IntakeFieldName[],
   dependencies: DomainDependencies,
 ): PermissionSlipState['fieldProvenance'] {
@@ -194,23 +214,123 @@ function provenanceForAgentReplacement(
   for (const field of INTAKE_FIELD_NAMES) {
     if (nextDraft[field] === undefined) continue
     if (suppliedFields.includes(field)) {
-      provenance[field] = { actor: 'agent', updatedAt }
+      provenance[field] = {
+        source: 'assistant_suggested',
+        verifiedByHuman: false,
+        updatedAt,
+      }
     } else if (state.fieldProvenance[field]) {
-      provenance[field] = state.fieldProvenance[field]
+      provenance[field] = { ...state.fieldProvenance[field] }
     }
   }
-
   return provenance
 }
 
-function sameDraft(left: IntakeDraft, right: IntakeDraft): boolean {
-  return INTAKE_FIELD_NAMES.every((field) => Object.is(left[field], right[field]))
+function unverifiedPopulatedFields(state: PermissionSlipState): IntakeFieldName[] {
+  return INTAKE_FIELD_NAMES.filter(
+    (field) =>
+      state.draft[field] !== undefined &&
+      state.fieldProvenance[field]?.verifiedByHuman !== true,
+  )
 }
 
-/**
- * Returns a defensive policy view for agents and UI consumers. Authorization is
- * read from the live state so callers cannot rely on registration-time data.
- */
+function cloneInquiryProvenance(
+  provenance: InquiryProvenance,
+): InquiryProvenance {
+  return { ...provenance }
+}
+
+function cloneDisclosedProvenance(
+  state: PermissionSlipState,
+  disclosedFields: IntakeFieldName[],
+): Partial<Record<IntakeFieldName, FieldProvenance>> {
+  const result: Partial<Record<IntakeFieldName, FieldProvenance>> = {}
+  for (const field of disclosedFields) {
+    const provenance = state.fieldProvenance[field]
+    if (provenance) result[field] = { ...provenance }
+  }
+  return result
+}
+
+function permissionNames(
+  permissions: ContactPermissions,
+  granted: boolean,
+): ContactPermissionName[] {
+  return CONTACT_PERMISSION_NAMES.filter(
+    (permission) => permissions[permission] === granted,
+  )
+}
+
+function buildReviewPayload(
+  state: PermissionSlipState,
+  snapshot: InquiryReviewPayload['snapshot'],
+  disclosedFields: IntakeFieldName[],
+): InquiryReviewPayload {
+  return {
+    snapshot: { ...snapshot },
+    optionalDisclosureAuthorizations: {
+      ...state.optionalDisclosureAuthorizations,
+    },
+    contactPermissions: { ...state.contactPermissions },
+    nextStepIntentConfirmed: true,
+    inquiryProvenance: cloneInquiryProvenance(state.inquiryProvenance),
+    fieldProvenance: cloneDisclosedProvenance(state, disclosedFields),
+  }
+}
+
+function failureReceipt(
+  state: PermissionSlipState,
+  dependencies: DomainDependencies,
+  domainError: DomainError,
+  reviewId: string | null,
+): FailedSubmissionReceipt {
+  return {
+    receiptId: dependencies.createId('receipt'),
+    submissionId: null,
+    submissionTimestamp: dependencies.now(),
+    outcome: 'rejected',
+    status: 'submission_rejected',
+    destination: SIMULATED_INQUIRY_DESTINATION,
+    requestedNextStep: state.draft.requestedNextStep ?? null,
+    permissionsGranted: permissionNames(state.contactPermissions, true),
+    permissionsWithheld: permissionNames(state.contactPermissions, false),
+    inquiryProvenance: cloneInquiryProvenance(state.inquiryProvenance),
+    reviewId,
+    reviewRevision: state.review?.revision ?? null,
+    reviewDigest: state.review?.digest ?? null,
+    failure: {
+      code: domainError.code,
+      message: domainError.message,
+      retry: domainError.retry,
+    },
+    noNetworkTransmission: true,
+    statement: 'No network transmission occurred.',
+  }
+}
+
+function rejectedSubmission<T>(
+  state: PermissionSlipState,
+  dependencies: DomainDependencies,
+  actor: 'agent' | 'human',
+  domainError: DomainError,
+  reviewId: string | null,
+): OperationResult<T> {
+  const receipt = failureReceipt(state, dependencies, domainError, reviewId)
+  const nextState = appendActivity(
+    { ...state, receipts: [...state.receipts, receipt] },
+    dependencies,
+    actor,
+    'intake_submitted',
+    'rejected',
+  )
+  return {
+    ok: false,
+    error: { ...domainError, receiptId: receipt.receiptId },
+    failureReceipt: receipt,
+    state: freezePermissionSlipState(nextState),
+  }
+}
+
 export function getIntakeRequirements(
   state: PermissionSlipState,
 ): IntakeRequirements {
@@ -225,16 +345,14 @@ export function getIntakeRequirements(
     ),
     neverCollectedFields: NEVER_COLLECTED_DEFINITIONS.map((field) => ({ ...field })),
     workflowStatus: state.status,
+    nextStepIntentConfirmed: state.nextStepIntentConfirmed,
+    contactPermissions: { ...state.contactPermissions },
+    unverifiedAssistantFields: unverifiedPopulatedFields(state),
     instructions: INTAKE_REQUIREMENTS_INSTRUCTIONS,
   }
 }
 
-/**
- * Atomically replaces the agent-controlled draft after validating the complete
- * proposal against current human authorizations. Existing unauthorized optional
- * values remain local and are neither accepted from the agent nor disclosed
- * while their authorization is off.
- */
+/** Agent proposals remain atomic and cannot grant any human permission. */
 export function replaceDraftFromAgent(
   state: PermissionSlipState,
   input: unknown,
@@ -248,8 +366,8 @@ export function replaceDraftFromAgent(
       'draft_replaced',
       error(
         'SUBMITTED_TERMINAL',
-        'The submitted demo is locked.',
-        'Ask the human to reset the demo before preparing another intake.',
+        'The submitted inquiry is locked.',
+        'Ask the human to reset before preparing another inquiry.',
       ),
     )
   }
@@ -258,7 +376,6 @@ export function replaceDraftFromAgent(
     input,
     state.optionalDisclosureAuthorizations,
   )
-
   if (!validation.ok) {
     if (validation.kind === 'unknown') {
       return rejected(
@@ -268,13 +385,12 @@ export function replaceDraftFromAgent(
         'draft_replaced',
         error(
           'UNKNOWN_FIELDS',
-          'The draft included unrecognized properties.',
+          'The inquiry included unrecognized properties.',
           'Retry with only fields listed by get_intake_requirements.',
           { fields: validation.fields },
         ),
       )
     }
-
     if (validation.kind === 'unauthorized') {
       return rejected(
         state,
@@ -283,14 +399,13 @@ export function replaceDraftFromAgent(
         'draft_replaced',
         error(
           'UNAUTHORIZED_OPTIONAL_FIELDS',
-          'The draft included optional fields the human has not authorized.',
-          'Retry without the unauthorized optional fields. Only the human can change disclosure permissions.',
+          'The inquiry included optional fields the person has not authorized.',
+          'Omit those fields. Only the person can change disclosure permissions.',
           { fields: validation.fields },
         ),
         validation.fields.filter(isOptionalFieldName),
       )
     }
-
     return rejected(
       state,
       dependencies,
@@ -298,8 +413,8 @@ export function replaceDraftFromAgent(
       'draft_replaced',
       error(
         'INVALID_INPUT',
-        'The proposed draft did not satisfy the intake validation rules.',
-        'Correct the listed fields and retry the complete draft.',
+        'The proposed inquiry did not satisfy the field rules.',
+        'Correct every listed field and retry the complete inquiry.',
         { fields: validation.fields, issues: validation.issues },
       ),
       validation.fields.filter((field): field is IntakeFieldName =>
@@ -308,9 +423,12 @@ export function replaceDraftFromAgent(
     )
   }
 
-  const nextDraft: IntakeDraft = { ...validation.draft }
+  const nextDraft: InquiryDraft = { ...validation.draft }
   for (const field of OPTIONAL_FIELD_NAMES) {
-    if (!state.optionalDisclosureAuthorizations[field] && state.draft[field] !== undefined) {
+    if (
+      !state.optionalDisclosureAuthorizations[field] &&
+      state.draft[field] !== undefined
+    ) {
       nextDraft[field] = state.draft[field]
     }
   }
@@ -318,6 +436,11 @@ export function replaceDraftFromAgent(
   let nextState = invalidatedEditingState(state, nextDraft)
   nextState = {
     ...nextState,
+    nextStepIntentConfirmed: false,
+    inquiryProvenance: {
+      ...state.inquiryProvenance,
+      entrySource: 'webmcp',
+    },
     fieldProvenance: provenanceForAgentReplacement(
       state,
       nextDraft,
@@ -341,14 +464,11 @@ export function replaceDraftFromAgent(
     ),
     workflowStatus: 'draft',
     revision: nextState.revision,
-    nextAction: 'Prepare a submission review, then wait for the human to approve it in the webpage.',
+    nextAction:
+      'Ask the person to verify assistant suggestions, confirm the requested next step, and set contact permissions before review.',
   })
 }
 
-/**
- * Applies an incremental human edit. Any actual change advances the revision
- * and invalidates the prior review and approval before returning.
- */
 export function updateDraftFromHuman(
   state: PermissionSlipState,
   input: unknown,
@@ -362,8 +482,8 @@ export function updateDraftFromHuman(
       'draft_updated',
       error(
         'SUBMITTED_TERMINAL',
-        'The submitted demo is locked.',
-        'Reset the demo before editing another intake.',
+        'The submitted inquiry is locked.',
+        'Reset before editing another inquiry.',
       ),
     )
   }
@@ -379,34 +499,28 @@ export function updateDraftFromHuman(
       error(
         unknown ? 'UNKNOWN_FIELDS' : 'INVALID_INPUT',
         unknown
-          ? 'The draft update included unrecognized properties.'
-          : 'The draft update used unsupported value types.',
+          ? 'The inquiry update included unrecognized properties.'
+          : 'The inquiry update used unsupported values.',
         unknown
-          ? 'Retry with only recognized intake fields.'
+          ? 'Use only recognized inquiry fields.'
           : 'Correct the listed fields and retry.',
         { fields: validation.fields, issues: validation.issues },
       ),
     )
   }
 
-  const nextDraft: IntakeDraft = { ...state.draft }
+  const nextDraft: InquiryDraft = { ...state.draft }
   for (const field of validation.suppliedFields) {
     const value = validation.patch[field]
-    if (value === undefined) {
-      delete nextDraft[field]
-    } else if (field === 'estimatedAttendeeCount') {
-      nextDraft.estimatedAttendeeCount = value as number
-    } else {
-      nextDraft[field] = value as string
-    }
+    if (value === undefined) delete nextDraft[field]
+    else nextDraft[field] = value as never
   }
 
   if (sameDraft(state.draft, nextDraft)) {
-    const status = editingStatus(state.draft)
     return succeeded(state, {
       changed: false,
       changedFields: [],
-      workflowStatus: status,
+      workflowStatus: editingStatus(state.draft),
       revision: state.revision,
     })
   }
@@ -415,13 +529,25 @@ export function updateDraftFromHuman(
   const updatedAt = dependencies.now()
   const fieldProvenance = { ...state.fieldProvenance }
   for (const field of validation.suppliedFields) {
-    if (nextDraft[field] === undefined) {
-      delete fieldProvenance[field]
-    } else {
-      fieldProvenance[field] = { actor: 'human', updatedAt }
+    if (nextDraft[field] === undefined) delete fieldProvenance[field]
+    else {
+      fieldProvenance[field] = {
+        source: 'person_provided',
+        verifiedByHuman: true,
+        updatedAt,
+        verifiedAt: updatedAt,
+      }
     }
   }
-  nextState = { ...nextState, fieldProvenance }
+  nextState = {
+    ...nextState,
+    fieldProvenance,
+    nextStepIntentConfirmed: validation.suppliedFields.includes(
+      'requestedNextStep',
+    )
+      ? false
+      : state.nextStepIntentConfirmed,
+  }
   nextState = appendActivity(
     nextState,
     dependencies,
@@ -439,10 +565,6 @@ export function updateDraftFromHuman(
   })
 }
 
-/**
- * Changes optional disclosure policy exclusively through the human path. A
- * policy change invalidates review/approval even if no draft value changed.
- */
 export function setOptionalDisclosureFromHuman(
   state: PermissionSlipState,
   fieldInput: unknown,
@@ -457,12 +579,11 @@ export function setOptionalDisclosureFromHuman(
       'disclosure_changed',
       error(
         'SUBMITTED_TERMINAL',
-        'The submitted demo is locked.',
-        'Reset the demo before changing disclosure permissions.',
+        'The submitted inquiry is locked.',
+        'Reset before changing disclosure decisions.',
       ),
     )
   }
-
   if (
     typeof fieldInput !== 'string' ||
     !isOptionalFieldName(fieldInput) ||
@@ -475,8 +596,8 @@ export function setOptionalDisclosureFromHuman(
       'disclosure_changed',
       error(
         'INVALID_INPUT',
-        'Disclosure updates require a recognized optional field and a boolean authorization.',
-        'Retry with one optional field and an explicit true or false value.',
+        'Disclosure updates require one optional field and a boolean decision.',
+        'Use a recognized optional field and an explicit decision.',
       ),
     )
   }
@@ -523,10 +644,230 @@ export function setOptionalDisclosureFromHuman(
   })
 }
 
-/**
- * Captures the currently authorized disclosure and computes its consistency
- * digest. Preparing a review never grants approval or submission authority.
- */
+/** Only the human facade should expose this operation. */
+export function verifyAssistantSuggestionsFromHuman(
+  state: PermissionSlipState,
+  dependencies: DomainDependencies,
+): OperationResult<AssistantVerificationResult> {
+  if (state.status === 'submitted') {
+    return rejected(
+      state,
+      dependencies,
+      'human',
+      'assistant_suggestions_verified',
+      error(
+        'SUBMITTED_TERMINAL',
+        'The submitted inquiry is locked.',
+        'Reset before reviewing another inquiry.',
+      ),
+    )
+  }
+
+  const fields = INTAKE_FIELD_NAMES.filter((field) => {
+    const provenance = state.fieldProvenance[field]
+    return (
+      state.draft[field] !== undefined &&
+      provenance?.source === 'assistant_suggested' &&
+      !provenance.verifiedByHuman
+    )
+  })
+  if (fields.length === 0) {
+    return succeeded(state, {
+      changed: false,
+      verifiedFields: [],
+      workflowStatus: editingStatus(state.draft),
+      revision: state.revision,
+    })
+  }
+
+  const verifiedAt = dependencies.now()
+  const fieldProvenance = { ...state.fieldProvenance }
+  for (const field of fields) {
+    const current = fieldProvenance[field]
+    if (!current) continue
+    fieldProvenance[field] = {
+      ...current,
+      verifiedByHuman: true,
+      verifiedAt,
+    }
+  }
+
+  let nextState = invalidatedEditingState(state, state.draft)
+  nextState = { ...nextState, fieldProvenance }
+  nextState = appendActivity(
+    nextState,
+    dependencies,
+    'human',
+    'assistant_suggestions_verified',
+    'succeeded',
+    fields,
+  )
+
+  return succeeded(nextState, {
+    changed: true,
+    verifiedFields: fields,
+    workflowStatus: nextState.status as 'empty' | 'draft',
+    revision: nextState.revision,
+  })
+}
+
+/** Explicitly confirms or revokes intent for the currently requested next step. */
+export function confirmNextStepIntentFromHuman(
+  state: PermissionSlipState,
+  confirmedInput: unknown,
+  dependencies: DomainDependencies,
+): OperationResult<NextStepIntentResult> {
+  if (state.status === 'submitted') {
+    return rejected(
+      state,
+      dependencies,
+      'human',
+      'next_step_intent_changed',
+      error(
+        'SUBMITTED_TERMINAL',
+        'The submitted inquiry is locked.',
+        'Reset before confirming another next step.',
+      ),
+    )
+  }
+  if (typeof confirmedInput !== 'boolean') {
+    return rejected(
+      state,
+      dependencies,
+      'human',
+      'next_step_intent_changed',
+      error(
+        'INVALID_INPUT',
+        'Next-step confirmation requires an explicit boolean decision.',
+        'Confirm or revoke the visible requested next step.',
+      ),
+    )
+  }
+  if (
+    confirmedInput &&
+    (!state.draft.requestedNextStep ||
+      !REQUESTED_NEXT_STEPS.includes(state.draft.requestedNextStep))
+  ) {
+    return rejected(
+      state,
+      dependencies,
+      'human',
+      'next_step_intent_changed',
+      error(
+        'INCOMPLETE_DRAFT',
+        'A valid requested next step is required before intent can be confirmed.',
+        'Choose a visible next step, then confirm it.',
+        { fields: ['requestedNextStep'] },
+      ),
+      ['requestedNextStep'],
+    )
+  }
+  if (state.nextStepIntentConfirmed === confirmedInput) {
+    return succeeded(state, {
+      changed: false,
+      confirmed: confirmedInput,
+      ...(state.draft.requestedNextStep
+        ? { requestedNextStep: state.draft.requestedNextStep }
+        : {}),
+      workflowStatus: editingStatus(state.draft),
+      revision: state.revision,
+    })
+  }
+
+  let nextState = invalidatedEditingState(state, state.draft)
+  nextState = { ...nextState, nextStepIntentConfirmed: confirmedInput }
+  nextState = appendActivity(
+    nextState,
+    dependencies,
+    'human',
+    'next_step_intent_changed',
+    'succeeded',
+    ['requestedNextStep'],
+  )
+  return succeeded(nextState, {
+    changed: true,
+    confirmed: confirmedInput,
+    ...(state.draft.requestedNextStep
+      ? { requestedNextStep: state.draft.requestedNextStep }
+      : {}),
+    workflowStatus: nextState.status as 'empty' | 'draft',
+    revision: nextState.revision,
+  })
+}
+
+/** Project response and optional updates remain independent human decisions. */
+export function setContactPermissionFromHuman(
+  state: PermissionSlipState,
+  permissionInput: unknown,
+  grantedInput: unknown,
+  dependencies: DomainDependencies,
+): OperationResult<ContactPermissionResult> {
+  if (state.status === 'submitted') {
+    return rejected(
+      state,
+      dependencies,
+      'human',
+      'contact_permission_changed',
+      error(
+        'SUBMITTED_TERMINAL',
+        'The submitted inquiry is locked.',
+        'Reset before changing contact permissions.',
+      ),
+    )
+  }
+  if (
+    typeof permissionInput !== 'string' ||
+    !isContactPermissionName(permissionInput) ||
+    typeof grantedInput !== 'boolean'
+  ) {
+    return rejected(
+      state,
+      dependencies,
+      'human',
+      'contact_permission_changed',
+      error(
+        'INVALID_INPUT',
+        'Contact permission requires a recognized permission and boolean decision.',
+        'Use one visible contact permission and an explicit decision.',
+      ),
+    )
+  }
+  if (state.contactPermissions[permissionInput] === grantedInput) {
+    return succeeded(state, {
+      changed: false,
+      permission: permissionInput,
+      granted: grantedInput,
+      contactPermissions: { ...state.contactPermissions },
+      workflowStatus: editingStatus(state.draft),
+      revision: state.revision,
+    })
+  }
+
+  let nextState = invalidatedEditingState(state, state.draft)
+  nextState = {
+    ...nextState,
+    contactPermissions: {
+      ...state.contactPermissions,
+      [permissionInput]: grantedInput,
+    },
+  }
+  nextState = appendActivity(
+    nextState,
+    dependencies,
+    'human',
+    'contact_permission_changed',
+    'succeeded',
+  )
+  return succeeded(nextState, {
+    changed: true,
+    permission: permissionInput,
+    granted: grantedInput,
+    contactPermissions: { ...nextState.contactPermissions },
+    workflowStatus: nextState.status as 'empty' | 'draft',
+    revision: nextState.revision,
+  })
+}
+
 export async function prepareSubmissionReview(
   state: PermissionSlipState,
   actor: 'agent' | 'human',
@@ -540,8 +881,8 @@ export async function prepareSubmissionReview(
       'review_prepared',
       error(
         'SUBMITTED_TERMINAL',
-        'The submitted demo is locked.',
-        'Ask the human to reset the demo before preparing another review.',
+        'The submitted inquiry is locked.',
+        'Ask the human to reset before preparing another review.',
       ),
     )
   }
@@ -555,7 +896,7 @@ export async function prepareSubmissionReview(
       'review_prepared',
       error(
         'INCOMPLETE_DRAFT',
-        'A review cannot be prepared until every required field is valid.',
+        'Every required inquiry field must be valid before review.',
         'Complete or correct the listed fields, then prepare the review again.',
         {
           fields: [...new Set(validation.issues.map((issue) => issue.field))],
@@ -570,15 +911,85 @@ export async function prepareSubmissionReview(
     )
   }
 
+  if (!state.nextStepIntentConfirmed) {
+    return rejected(
+      state,
+      dependencies,
+      actor,
+      'review_prepared',
+      error(
+        'INTENT_CONFIRMATION_REQUIRED',
+        'The person has not confirmed the requested business next step.',
+        'Ask the person to confirm the visible requested next step.',
+        { fields: ['requestedNextStep'] },
+      ),
+      ['requestedNextStep'],
+    )
+  }
+
+  if (!state.contactPermissions.projectResponse) {
+    return rejected(
+      state,
+      dependencies,
+      actor,
+      'review_prepared',
+      error(
+        'CONTACT_PERMISSION_REQUIRED',
+        'Permission to reply about this project has not been granted.',
+        'The person must grant project-response permission separately from optional updates.',
+      ),
+    )
+  }
+
+  const unverifiedFields = unverifiedPopulatedFields(state)
+  if (unverifiedFields.length > 0) {
+    return rejected(
+      state,
+      dependencies,
+      actor,
+      'review_prepared',
+      error(
+        'HUMAN_VERIFICATION_REQUIRED',
+        'Assistant-suggested values still need visible human verification.',
+        'Ask the person to verify every assistant suggestion before review.',
+        { fields: unverifiedFields },
+      ),
+      unverifiedFields,
+    )
+  }
+
   const details = buildDisclosureSnapshot(
     validation.normalizedDraft,
     state.optionalDisclosureAuthorizations,
   )
-  const canonicalSnapshot = canonicalSerialize(details.snapshot)
-  let digest: string
+  if (
+    details.snapshot.preferredResponseMethod === 'phone' &&
+    details.snapshot.phone === undefined
+  ) {
+    return rejected(
+      state,
+      dependencies,
+      actor,
+      'review_prepared',
+      error(
+        'INCOMPLETE_DRAFT',
+        'Phone response was selected, but no authorized phone number is included.',
+        'Authorize and provide a phone number, or choose another response method.',
+        { fields: ['phone', 'preferredResponseMethod'] },
+      ),
+      ['phone', 'preferredResponseMethod'],
+    )
+  }
 
+  const payload = buildReviewPayload(
+    state,
+    details.snapshot,
+    details.disclosedFields,
+  )
+  const canonicalPayload = canonicalSerializeReviewPayload(payload)
+  let digest: string
   try {
-    digest = await dependencies.digest(canonicalSnapshot)
+    digest = await dependencies.digest(canonicalPayload)
   } catch {
     return rejected(
       state,
@@ -592,7 +1003,6 @@ export async function prepareSubmissionReview(
       ),
     )
   }
-
   if (typeof digest !== 'string' || digest.length === 0) {
     return rejected(
       state,
@@ -612,10 +1022,18 @@ export async function prepareSubmissionReview(
     digest,
     revision: state.revision,
     createdAt: dependencies.now(),
-    snapshot: details.snapshot,
-    disclosedFields: details.disclosedFields,
-    authorizedOptionalFields: details.authorizedOptionalFields,
-    withheldOptionalFields: details.withheldOptionalFields,
+    payload,
+    snapshot: { ...payload.snapshot },
+    disclosedFields: [...details.disclosedFields],
+    authorizedOptionalFields: [...details.authorizedOptionalFields],
+    withheldOptionalFields: [...details.withheldOptionalFields],
+    contactPermissions: { ...payload.contactPermissions },
+    nextStepIntentConfirmed: true as const,
+    inquiryProvenance: cloneInquiryProvenance(payload.inquiryProvenance),
+    fieldProvenance: cloneDisclosedProvenance(
+      state,
+      details.disclosedFields,
+    ),
   }
 
   let nextState: PermissionSlipState = {
@@ -642,17 +1060,15 @@ export async function prepareSubmissionReview(
       disclosedFields: [...review.disclosedFields],
       authorizedOptionalFields: [...review.authorizedOptionalFields],
       withheldOptionalFields: [...review.withheldOptionalFields],
+      permissionsGranted: permissionNames(review.contactPermissions, true),
+      permissionsWithheld: permissionNames(review.contactPermissions, false),
     },
     workflowStatus: 'review_pending',
     humanActionRequired:
-      'The human must approve this exact review in the webpage before submission.',
+      'The person must approve this exact visible review before submission.',
   })
 }
 
-/**
- * Records human approval only when ID, digest, and revision exactly match the
- * visible pending review. No agent-facing facade exposes this operation.
- */
 export function approveReviewFromHuman(
   state: PermissionSlipState,
   input: ApprovalInput,
@@ -666,12 +1082,11 @@ export function approveReviewFromHuman(
       'review_approved',
       error(
         'SUBMITTED_TERMINAL',
-        'The submitted demo is locked.',
-        'Reset the demo before creating another approval.',
+        'The submitted inquiry is locked.',
+        'Reset before approving another inquiry.',
       ),
     )
   }
-
   if (!state.review || state.status !== 'review_pending') {
     return rejected(
       state,
@@ -685,7 +1100,6 @@ export function approveReviewFromHuman(
       ),
     )
   }
-
   if (
     typeof input !== 'object' ||
     input === null ||
@@ -700,12 +1114,11 @@ export function approveReviewFromHuman(
       'review_approved',
       error(
         'INVALID_INPUT',
-        'Approval requires the exact reviewId, digest, and revision.',
+        'Approval requires the exact review ID, digest, and revision.',
         'Use the values displayed by the current review.',
       ),
     )
   }
-
   if (
     input.reviewId !== state.review.reviewId ||
     input.revision !== state.review.revision ||
@@ -718,12 +1131,11 @@ export function approveReviewFromHuman(
       'review_approved',
       error(
         'STALE_REVIEW',
-        'The approval does not match the current review and draft revision.',
+        'The approval does not match the current review and revision.',
         'Prepare and inspect a fresh review before approving.',
       ),
     )
   }
-
   if (input.digest !== state.review.digest) {
     return rejected(
       state,
@@ -757,15 +1169,13 @@ export function approveReviewFromHuman(
     'succeeded',
     state.review.disclosedFields,
   )
-
   return succeeded(nextState, {
     approval,
     workflowStatus: 'approved',
-    nextAction: 'The approved review can now be submitted using its review ID.',
+    nextAction: 'The approved review can now be submitted by its review ID.',
   })
 }
 
-/** Returns to editing by discarding any review and approval binding. */
 export function returnToEditingFromHuman(
   state: PermissionSlipState,
   dependencies: DomainDependencies,
@@ -778,12 +1188,11 @@ export function returnToEditingFromHuman(
       'returned_to_editing',
       error(
         'SUBMITTED_TERMINAL',
-        'The submitted demo is locked.',
-        'Reset the demo before starting another draft.',
+        'The submitted inquiry is locked.',
+        'Reset before starting another inquiry.',
       ),
     )
   }
-
   if (!state.review && !state.approval) {
     return succeeded(state, {
       workflowStatus: editingStatus(state.draft),
@@ -799,123 +1208,148 @@ export function returnToEditingFromHuman(
     'returned_to_editing',
     'succeeded',
   )
-
   return succeeded(nextState, {
     workflowStatus: nextState.status as 'empty' | 'draft',
     revision: nextState.revision,
   })
 }
 
-/**
- * Revalidates draft, authorization projection, revision, review, approval, and
- * digest before creating a local receipt. This operation performs no network I/O.
- */
+/** Executes only the still-current frozen payload and records every outcome. */
 export async function submitApprovedIntake(
   state: PermissionSlipState,
   reviewIdInput: unknown,
   actor: 'agent' | 'human',
   dependencies: DomainDependencies,
 ): Promise<OperationResult<SubmissionResult>> {
-  if (state.status === 'submitted') {
-    return rejected(
-      state,
-      dependencies,
-      actor,
-      'intake_submitted',
-      error(
-        'SUBMITTED_TERMINAL',
-        'This demo intake has already been submitted.',
-        'Retrieve its receipt, or ask the human to reset the demo.',
-      ),
-    )
-  }
-
   if (typeof reviewIdInput !== 'string' || reviewIdInput.trim().length === 0) {
-    return rejected(
+    return rejectedSubmission(
       state,
       dependencies,
       actor,
-      'intake_submitted',
       error(
         'INVALID_INPUT',
-        'Submission requires a non-empty reviewId.',
-        'Retry with the reviewId returned by prepare_submission_review.',
+        'Submission requires a non-empty review ID.',
+        'Retry with the review ID returned by prepare_submission_review.',
       ),
+      null,
     )
   }
 
-  if (!state.review) {
-    return rejected(
+  const priorSuccess = state.receipts.find(
+    (receipt): receipt is SuccessfulSubmissionReceipt =>
+      receipt.outcome === 'accepted' && receipt.reviewId === reviewIdInput,
+  )
+  if (priorSuccess) {
+    return succeeded(state, {
+      receiptId: priorSuccess.receiptId,
+      submissionId: priorSuccess.submissionId,
+      receipt: priorSuccess,
+      workflowStatus: 'submitted',
+      confirmation:
+        'This exact review was already submitted; the original receipt was returned.',
+      idempotentReplay: true,
+    })
+  }
+
+  if (state.status === 'submitted') {
+    return rejectedSubmission(
       state,
       dependencies,
       actor,
-      'intake_submitted',
+      error(
+        'SUBMITTED_TERMINAL',
+        'A different inquiry review has already been submitted.',
+        'Retrieve its receipt, or ask the human to reset.',
+      ),
+      reviewIdInput,
+    )
+  }
+  if (!state.review) {
+    return rejectedSubmission(
+      state,
+      dependencies,
+      actor,
       error(
         'REVIEW_NOT_FOUND',
-        'No review exists for this draft.',
+        'No review exists for this inquiry.',
         'Prepare a review and wait for human approval before submitting.',
       ),
+      reviewIdInput,
     )
   }
-
   if (reviewIdInput !== state.review.reviewId) {
-    return rejected(
+    return rejectedSubmission(
       state,
       dependencies,
       actor,
-      'intake_submitted',
       error(
         'STALE_REVIEW',
-        'The supplied reviewId does not match the current review.',
-        'Use the current reviewId or prepare a fresh review.',
+        'The supplied review ID does not match the current review.',
+        'Use the current review ID or prepare a fresh review.',
       ),
+      reviewIdInput,
     )
   }
-
   if (!state.approval || state.status !== 'approved') {
-    return rejected(
+    return rejectedSubmission(
       state,
       dependencies,
       actor,
-      'intake_submitted',
       error(
         'APPROVAL_REQUIRED',
-        'The human has not approved this review in the webpage.',
-        'Wait for the human to approve the exact visible disclosure before retrying.',
+        'The person has not approved this review in the webpage.',
+        'Wait for visible human approval of the exact review before retrying.',
       ),
+      reviewIdInput,
     )
   }
-
   if (
     state.revision !== state.review.revision ||
     state.approval.reviewId !== state.review.reviewId ||
     state.approval.revision !== state.review.revision
   ) {
-    return rejected(
+    return rejectedSubmission(
       state,
       dependencies,
       actor,
-      'intake_submitted',
       error(
         'STALE_REVIEW',
-        'The draft or approval no longer matches the frozen review.',
-        'Prepare a fresh review and obtain a new human approval.',
+        'The inquiry or approval no longer matches the frozen review.',
+        'Prepare a fresh review and obtain new human approval.',
       ),
+      reviewIdInput,
     )
   }
 
   const validation = validateCompleteDraft(state.draft)
   if (!validation.valid || !validation.normalizedDraft) {
-    return rejected(
+    return rejectedSubmission(
       state,
       dependencies,
       actor,
-      'intake_submitted',
       error(
         'STALE_REVIEW',
-        'The current draft is no longer complete and valid.',
-        'Correct the draft, prepare a fresh review, and obtain approval again.',
+        'The current inquiry is no longer complete and valid.',
+        'Correct it, prepare a fresh review, and obtain approval again.',
       ),
+      reviewIdInput,
+    )
+  }
+  if (
+    !state.nextStepIntentConfirmed ||
+    !state.contactPermissions.projectResponse ||
+    unverifiedPopulatedFields(state).length > 0
+  ) {
+    return rejectedSubmission(
+      state,
+      dependencies,
+      actor,
+      error(
+        'STALE_REVIEW',
+        'Human intent, verification, or project-response permission changed.',
+        'Prepare a fresh review and obtain approval again.',
+      ),
+      reviewIdInput,
     )
   }
 
@@ -923,20 +1357,24 @@ export async function submitApprovedIntake(
     validation.normalizedDraft,
     state.optionalDisclosureAuthorizations,
   )
-  const currentCanonical = canonicalSerialize(currentDetails.snapshot)
-  const reviewedCanonical = canonicalSerialize(state.review.snapshot)
-
+  const currentPayload = buildReviewPayload(
+    state,
+    currentDetails.snapshot,
+    currentDetails.disclosedFields,
+  )
+  const currentCanonical = canonicalSerializeReviewPayload(currentPayload)
+  const reviewedCanonical = canonicalSerializeReviewPayload(state.review.payload)
   if (currentCanonical !== reviewedCanonical) {
-    return rejected(
+    return rejectedSubmission(
       state,
       dependencies,
       actor,
-      'intake_submitted',
       error(
         'STALE_REVIEW',
-        'The current disclosure differs from the frozen review.',
-        'Prepare a fresh review and obtain a new human approval.',
+        'The executable inquiry differs from the frozen review.',
+        'Prepare a fresh review and obtain approval again.',
       ),
+      reviewIdInput,
     )
   }
 
@@ -944,46 +1382,62 @@ export async function submitApprovedIntake(
   try {
     currentDigest = await dependencies.digest(currentCanonical)
   } catch {
-    return rejected(
+    return rejectedSubmission(
       state,
       dependencies,
       actor,
-      'intake_submitted',
       error(
         'DIGEST_UNAVAILABLE',
         'The browser could not verify the review digest.',
         'Retry in a browser with Web Crypto support.',
       ),
+      reviewIdInput,
     )
   }
-
   if (
     currentDigest !== state.review.digest ||
     state.approval.digest !== state.review.digest
   ) {
-    return rejected(
+    return rejectedSubmission(
       state,
       dependencies,
       actor,
-      'intake_submitted',
       error(
         'DIGEST_MISMATCH',
         'The current, reviewed, and approved digests do not match.',
-        'Prepare a fresh review and obtain a new human approval.',
+        'Prepare a fresh review and obtain approval again.',
       ),
+      reviewIdInput,
     )
   }
 
-  const receipt: DisclosureReceipt = {
+  const receipt: SuccessfulSubmissionReceipt = {
     receiptId: dependencies.createId('receipt'),
-    reviewId: state.review.reviewId,
+    submissionId: dependencies.createId('submission'),
     submissionTimestamp: dependencies.now(),
+    outcome: 'accepted',
+    status: 'qualified_inquiry_created',
+    destination: SIMULATED_INQUIRY_DESTINATION,
+    requestedNextStep: state.review.snapshot.requestedNextStep,
+    permissionsGranted: permissionNames(state.review.contactPermissions, true),
+    permissionsWithheld: permissionNames(state.review.contactPermissions, false),
+    inquiryProvenance: cloneInquiryProvenance(
+      state.review.inquiryProvenance,
+    ),
+    reviewId: state.review.reviewId,
+    reviewRevision: state.review.revision,
+    reviewDigest: state.review.digest,
+    frozenSnapshot: { ...state.review.snapshot },
     fieldsDisclosed: { ...state.review.snapshot },
     disclosedFieldNames: [...state.review.disclosedFields],
     optionalFieldsWithheld: [...state.review.withheldOptionalFields],
     neverCollectedCategories: [...NEVER_COLLECTED_NAMES],
     snapshotDigest: state.review.digest,
-    destination: 'Local demonstration only',
+    fieldProvenance: cloneDisclosedProvenance(
+      state,
+      state.review.disclosedFields,
+    ),
+    contactPermissions: { ...state.review.contactPermissions },
     noNetworkTransmission: true,
     statement: 'No network transmission occurred.',
   }
@@ -1001,21 +1455,21 @@ export async function submitApprovedIntake(
     'succeeded',
     state.review.disclosedFields,
   )
-
   return succeeded(nextState, {
     receiptId: receipt.receiptId,
+    submissionId: receipt.submissionId,
     receipt,
     workflowStatus: 'submitted',
     confirmation:
-      'The approved snapshot was stored locally. No network transmission occurred.',
+      'The approved inquiry snapshot was stored locally as a simulated Village Alchemist submission. No network transmission occurred.',
+    idempotentReplay: false,
   })
 }
 
-/** Reads a named receipt, or the latest one when no ID is supplied, without mutation. */
 export function getDisclosureReceipt(
   state: PermissionSlipState,
   receiptId?: unknown,
-): OperationResult<DisclosureReceipt> {
+): OperationResult<PermissionSlipState['receipts'][number]> {
   if (
     receiptId !== undefined &&
     (typeof receiptId !== 'string' || receiptId.trim().length === 0)
@@ -1025,7 +1479,7 @@ export function getDisclosureReceipt(
       error: error(
         'INVALID_INPUT',
         'receiptId must be a non-empty string when supplied.',
-        'Retry without a receiptId to get the latest receipt, or use a valid receiptId.',
+        'Omit it for the latest receipt, or use a valid receipt ID.',
       ),
       state,
     }
@@ -1035,63 +1489,66 @@ export function getDisclosureReceipt(
     receiptId === undefined
       ? state.receipts.at(-1)
       : state.receipts.find((candidate) => candidate.receiptId === receiptId)
-
   if (!receipt) {
     return {
       ok: false,
       error: error(
         'RECEIPT_NOT_FOUND',
-        'No matching disclosure receipt exists.',
-        'Submit an approved intake first, or retry with a known receiptId.',
+        'No matching submission receipt exists.',
+        'Attempt submission first, or use a known receipt ID.',
       ),
       state,
     }
   }
-
   return succeeded(state, receipt)
 }
 
-/** Creates a fresh empty workflow; only the human store facade exposes reset. */
 export function resetFromHuman(): OperationResult<ResetResult> {
   const state = createInitialState()
   return succeeded(state, { workflowStatus: 'empty', cleared: true })
 }
 
-/**
- * Converts an async race into an auditable rejection rather than overwriting a
- * newer state produced while digest work was in flight.
- */
 export function rejectStaleAsyncOperation(
   state: PermissionSlipState,
   actor: 'agent' | 'human',
   action: 'review_prepared' | 'intake_submitted',
   dependencies: DomainDependencies,
 ): OperationResult<never> {
-  return rejected(
-    state,
-    dependencies,
-    actor,
-    action,
-    error(
-      'STALE_OPERATION',
-      'The state changed while this operation was being prepared.',
-      'Inspect the current state and retry the operation.',
-    ),
+  const domainError = error(
+    'STALE_OPERATION',
+    'The state changed while this operation was being prepared.',
+    'Inspect the current state and retry the operation.',
   )
+  return action === 'intake_submitted'
+    ? rejectedSubmission(
+        state,
+        dependencies,
+        actor,
+        domainError,
+        state.review?.reviewId ?? null,
+      )
+    : rejected(state, dependencies, actor, action, domainError)
 }
 
-/** Produces value-free activity copy suitable for the visible audit trail. */
 export function activitySummary(activity: ActivityEntry): string {
-  const actor = activity.actor === 'human' ? 'Human' : activity.actor === 'agent' ? 'Agent' : 'System'
+  const actor =
+    activity.actor === 'human'
+      ? 'Human'
+      : activity.actor === 'agent'
+        ? 'Agent'
+        : 'System'
   const result = activity.outcome === 'succeeded' ? 'completed' : 'rejected'
   const actions: Record<ActivityAction, string> = {
-    draft_replaced: 'draft replacement',
-    draft_updated: 'draft update',
+    draft_replaced: 'inquiry replacement',
+    draft_updated: 'inquiry update',
     disclosure_changed: 'disclosure permission change',
+    assistant_suggestions_verified: 'assistant suggestion verification',
+    next_step_intent_changed: 'next-step intent change',
+    contact_permission_changed: 'contact permission change',
     review_prepared: 'review preparation',
     review_approved: 'review approval',
     returned_to_editing: 'return to editing',
-    intake_submitted: 'local submission',
+    intake_submitted: 'simulated inquiry submission',
   }
   return `${actor} ${actions[activity.action]} ${result}.`
 }

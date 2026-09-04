@@ -1,179 +1,121 @@
 # Permission Slip
 
-> Let the agent help. Keep the final say.
+> The agent can prepare the inquiry. It cannot give itself permission to send it.
 
-Permission Slip is a browser-only WebMCP demonstration of informed delegation. An
-agent can inspect an intake form, draft an inquiry in the same interface a person
-sees, and prepare an exact disclosure for review. Only the person can approve that
-review. Submission succeeds only while the approved snapshot is unchanged.
+Permission Slip is a browser-only Village Alchemist project-inquiry demo built
+with WebMCP. A person can describe a project in natural language, let an agent
+turn that request into a structured inquiry, verify the exact result in the page,
+and decide what follow-up is allowed. Only the visible human interface can grant
+permission or approve the frozen submission snapshot.
 
-The demo uses a fictional community-workshop inquiry and simulated local
-submission. It has no backend, and its Submit action sends no intake data from the
-page to a server. Never use real personal information in this prototype.
+The final action is deliberately simulated. It creates a receipt in versioned
+`localStorage` for the current browser origin and sends no inquiry to Village
+Alchemist or any other recipient. Use only the supplied fictional Maya Chen data.
 
-## Why this exists
+## The problem
 
-Most agent-enabled forms optimize for completion. Permission Slip optimizes for
-informed delegation.
+An agent can remove the repetitive work from a business inquiry, but preparing a
+useful draft is not the same as authorizing contact or approving disclosure.
+Permission Slip keeps those responsibilities separate:
 
-A conventional form leaves two awkward choices: make the person enter everything
-manually, or let an agent act without a precise, visible boundary around what it
-will disclose. Permission Slip demonstrates a third pattern:
+- the agent can inspect requirements, prepare a draft, explain missing details,
+  freeze a review, submit an already approved review, and retrieve its receipt;
+- the person verifies the draft, confirms the requested project next step,
+  permits or withholds a direct project response, controls optional ongoing
+  updates, and approves the exact frozen snapshot; and
+- the page applies the same validation and state transitions regardless of
+  whether an operation began in the form or through WebMCP.
 
-1. The site publishes narrow, structured tools.
-2. The agent drafts into the live human interface.
-3. The site freezes the exact proposed disclosure and computes its SHA-256 digest.
-4. The person approves that snapshot in the page.
-5. The agent may submit only the still-matching approved snapshot.
-6. The site produces a receipt showing what was disclosed and withheld.
+The result is one concrete lead-intake experience, not a generic form filler: a
+Village Alchemist collaboration inquiry with an explicit requested next step and
+an understandable record of what the person approved.
 
-## The consent model
+## The 90-second journey
 
-The application has five workflow states:
+1. A person gives ChatGPT a rough project goal, constraints, contact details, and
+   the next step they want from Village Alchemist.
+2. ChatGPT discovers the page tools and calls `get_intake_requirements` before
+   drafting.
+3. `draft_intake` writes a structured proposal into the same visible draft the
+   person can edit.
+4. The page identifies person-provided, assistant-suggested, automatically
+   captured, and explicitly verified information without inventing missing facts.
+5. The person verifies the inquiry, confirms the requested next step, allows a
+   direct project response, and separately withholds or permits ongoing updates.
+6. `prepare_submission_review` freezes the exact disclosure and produces a review
+   ID, revision, and SHA-256 digest.
+7. The person approves that exact snapshot in the visible page. There is no agent
+   tool for approval or permission changes.
+8. `submit_approved_intake` finalizes only the approved snapshot into browser-local
+   state, and `get_disclosure_receipt` returns the resulting receipt.
 
-| State | Meaning |
-| --- | --- |
-| `empty` | No draft has been created. |
-| `draft` | The intake is being edited and has no current review. |
-| `review_pending` | A frozen disclosure snapshot is waiting for human approval. |
-| `approved` | The human approved that exact review and digest. |
-| `submitted` | The approved snapshot was saved locally and a receipt was created. |
+## Human authority and snapshot safety
 
-The important invariants are shared by the ordinary UI and the WebMCP handlers:
+The human interface and WebMCP handlers share one store and the same inquiry
+operations. The important rules are enforced beneath both entry points:
 
-- Creating a review freezes a canonical snapshot and assigns a unique `reviewId`.
-- Approval applies only to that `reviewId`, snapshot digest, and draft revision.
-- Editing a field or changing an optional-disclosure permission invalidates an
-  outstanding review or approval.
-- The approval control is visible in the webpage and is not a WebMCP tool.
-- An unauthorized optional field rejects the entire agent draft; no partial update
-  is applied.
-- Submission checks the review, approval, current draft, and digest again before
-  writing a receipt.
-- Failed operations return structured explanations that tell the agent how to
-  recover.
-
-Optional fields are `phone`, `budget range`, `social handle`, and `additional
-notes`. Each has a human-controlled disclosure toggle. The agent can use an
-optional value only after its toggle is enabled; it cannot change those
-permissions through WebMCP.
-
-Street addresses, employers, precise live location, payment information, and
-unrelated private conversation history are deliberately outside the data model.
+- A draft is not a qualified inquiry until the person explicitly confirms a
+  relevant requested next step.
+- Permission for a direct response about this project is explicit and human-only.
+- Optional ongoing-update permission is separate, defaults off, and is never
+  bundled into the project-response decision.
+- Preparing a review never approves it.
+- Approval binds one review ID, draft revision, exact snapshot, and digest.
+- Any disclosure-affecting edit or permission change invalidates the review and
+  approval.
+- Submission consumes the frozen reviewed snapshot, never mutable form state.
+- A retry for the same approved review cannot create a second inquiry receipt.
+- Receipts preserve the approved values, requested next step, permissions,
+  provenance, destination, outcome, time, review binding, and fields withheld.
 
 ### Honest security boundary
 
-Permission Slip is a consent-pattern demonstration, not an identity or security
-system. A digest detects a changed snapshot; it does not prove who clicked Approve.
-`localStorage`, page JavaScript, and browser developer tools are not tamper-proof.
-The lack of an approval WebMCP tool is an intentional interface boundary, not a
-claim that general-purpose browser automation can never activate a visible control.
+The SHA-256 digest is a consistency check, not proof of identity, comprehension,
+or time. `localStorage`, page JavaScript, browser extensions, developer tools, and
+the local clock are not tamper-proof. Keeping approval out of the WebMCP tool list
+is an intentional product boundary; it is not a claim that general-purpose
+browser automation can never activate a visible control.
 
 ## WebMCP tools
 
-The top-level page registers five tools through the imperative
-`document.modelContext.registerTool()` API:
+The top-level page registers five product-specific tools through
+`document.modelContext.registerTool()`:
 
-Their externally meaningful metadata, input and result schemas, examples, error
-codes, state transitions, human prerequisites, and privacy notes live in the
-canonical [`src/contracts`](./src/contracts) registry. Browser registration and
-the static [Contract Explorer](./docs.html) both project that same source.
-
-| Tool | Mode | Contract |
+| Tool | What it does | What it cannot do |
 | --- | --- | --- |
-| `get_intake_requirements` | Read | Returns required, optional, authorized, and never-collected fields plus workflow status and approval guidance. |
-| `draft_intake` | Write | Atomically validates and writes a complete proposed draft to the visible form. Unauthorized optional or unknown fields reject the whole operation. |
-| `prepare_submission_review` | Write | Validates the draft, freezes the exact disclosure, creates a `reviewId` and SHA-256 digest, and moves the page to human review. |
-| `submit_approved_intake` | Write | Accepts a `reviewId` and performs a local simulated submission only after matching human approval and freshness checks pass. |
-| `get_disclosure_receipt` | Read | Returns a requested receipt or the latest one, including disclosed fields, withheld optional fields, digest, time, and local-only destination. |
+| `get_intake_requirements` | Reads the current inquiry requirements, allowed fields, permission state, and workflow status. | It does not read hidden draft values or change state. |
+| `draft_intake` | Validates and atomically replaces the visible proposed inquiry. | It cannot grant permissions, mark a person as verified, approve, or submit. |
+| `prepare_submission_review` | Validates the draft and freezes the exact candidate disclosure for review. | It does not approve the review or authorize contact. |
+| `submit_approved_intake` | Finalizes one unchanged, visibly approved review into browser-local state. | It cannot bypass human approval and it sends no network submission. |
+| `get_disclosure_receipt` | Reads a named receipt or the latest receipt on this browser origin. | It cannot list another browser’s state or prove the record was not edited locally. |
 
-The two read operations use the WebMCP `readOnlyHint`. Every input schema is
-narrow, documents its fields, and sets `additionalProperties: false`. Handlers
-also validate at runtime because a schema declaration is not an authorization
-boundary. Calls return either `{ "ok": true, "data": { ... } }` or a structured
-`{ "ok": false, "error": { "code", "message", "retryable", "details" } }`
-result so an agent can distinguish a correctable rejection from success.
-Tools that return human-authored intake values also set `untrustedContentHint`.
+Read operations are marked read-only. Tool inputs use closed schemas and are
+validated again at runtime. Calls return either an `{ "ok": true, "data": ... }`
+result or a structured `{ "ok": false, "error": ... }` result with a safe recovery
+step. When WebMCP is unavailable, the same human workflow remains usable as an
+ordinary form; the app does not install a runtime polyfill.
 
-When WebMCP is unavailable, the same page remains usable as an ordinary form.
-There is no runtime polyfill.
+## Browser-local data promise
 
-## Local-only data promise
+Only normal loading of the hosted HTML, CSS, and JavaScript assets uses the
+network. Drafting, reviewing, approving, simulated submission, receipt lookup,
+and reset do not initiate an application submission request.
 
-Only the normal loading of the hosted HTML, CSS, and JavaScript assets uses the
-network. Permission Slip makes no application-initiated request when drafting,
-reviewing, approving, submitting, reading a receipt, or resetting the demo.
+- Drafts, permissions, reviews, approvals, provenance, activity, and receipts are
+  stored in a versioned `localStorage` envelope for the current origin.
+- A receipt normally survives refreshes on that same origin until local state is
+  cleared. It is not remote or cross-device durability.
+- If storage is unavailable, the page continues in memory for the current session
+  and says so honestly.
+- Activity records actors, outcomes, and field names without copying inquiry
+  values into the timeline.
+- There is no backend, database, account, authentication, email delivery, CRM,
+  analytics, telemetry, payment flow, or OpenAI API call.
+- Reset clears this application’s browser-local demo state.
 
-- Drafts, reviews, approvals, activity, and receipts stay in versioned
-  `localStorage` for the current browser origin.
-- Open tabs synchronize before operations and on browser storage events so one
-  tab cannot finalize an approval made stale by an edit in another tab.
-- Activity entries record actors, outcomes, and field names rather than copying raw
-  intake values into the timeline.
-- If browser storage is unavailable, the workflow safely continues in memory for
-  the current page session, but it will not survive a reload.
-- “Submit” is explicitly simulated and writes locally.
-- There is no backend, database, account, authentication, analytics, telemetry,
-  email, payment flow, or OpenAI API call.
-- Reset removes the locally persisted demo state.
-
-Use the supplied fictional Maya Chen scenario rather than real information.
-
-This promise describes Permission Slip's own application and simulated submission
-path. If you use ChatGPT or another browser agent, that service may process chat
-messages, tool inputs, and tool results under its own terms and privacy policy.
-
-## Architecture
-
-The implementation keeps business rules independent of React and gives the human
-interface and WebMCP adapters one source of truth.
-
-```text
-src/
-├── components/      # Human-visible workflow and presentation
-├── contract-explorer/ # Static, human-readable contract reference
-├── contracts/       # Canonical WebMCP metadata, schemas, examples, and errors
-├── domain/          # Types, validation, canonical snapshots, digest, state engine
-├── store/           # Versioned local persistence and React subscription bridge
-├── webmcp/          # Runtime validation, adapters, and registration lifecycle
-├── test/            # Shared browser-test setup
-├── App.tsx          # One-page experience
-└── main.tsx         # Top-level application entry
-```
-
-Domain operations compute and validate a complete next state before the store
-commits it. Registered tool callbacks read from the current store rather than from
-a captured React render, avoiding stale state. An `AbortController` owns the
-registration lifecycle so hot reloads and teardown do not leave duplicate tools.
-
-## Developer documentation
-
-- [Contract Explorer](./docs.html) — polished static reference for all five
-  tools, human-only capabilities, workflow, disclosure model, failures, and
-  architecture. It is emitted as `dist/docs.html` by the normal build.
-- [Architecture](./docs/ARCHITECTURE.md) — dependency flow, state machine,
-  disclosure boundary, and ownership decisions.
-- [WebMCP guide](./docs/WEBMCP.md) — registration lifecycle, tool behavior,
-  errors, progressive enhancement, and compatibility notes.
-- [Privacy model](./docs/PRIVACY_MODEL.md) — collection classes, persistence,
-  threat boundaries, and the exact meaning of “no network transmission.”
-
-Run `npm run docs` to generate API reference HTML plus two deterministic
-machine-readable projections under `docs/generated/`. The following local links
-resolve after that command:
-
-- [`webmcp-contracts.json`](./docs/generated/webmcp-contracts.json) contains the
-  complete canonical registry projection.
-- [`openapi.json`](./docs/generated/openapi.json) is an OpenAPI 3.1
-  **documentation projection only**. Its paths
-  are synthetic, carry `x-network-endpoint: false`, and do not create or imply
-  HTTP routes.
-
-Generated documentation is intentionally ignored by Git; regenerate it from the
-reviewed TypeScript registry whenever needed. The existing hand-written boundary
-and domain validators remain defense-in-depth. The registry is the canonical
-externally published contract, while the validators enforce it and add
-authorization, normalization, and state checks at runtime.
+An external agent provider may process chat messages, tool inputs, and tool results
+under its own terms. Permission Slip controls only what this page accepts, reviews,
+and stores.
 
 ## Run locally
 
@@ -181,135 +123,120 @@ Node.js 22 and npm are recommended; CI uses Node.js 22.
 
 ```bash
 npm ci
-npm run dev
-```
-
-Open the URL Vite prints. To bind explicitly for a local in-app-browser test:
-
-```bash
 npm run dev -- --host 127.0.0.1
 ```
 
-Then open `http://127.0.0.1:5173/`.
+Open `http://127.0.0.1:5173/`.
 
-### Commands
+Before delivery, run every required gate:
 
-| Command | Purpose |
-| --- | --- |
-| `npm run dev` | Start the Vite development server. |
-| `npm run docs` | Generate contract JSON, the OpenAPI documentation projection, and TypeDoc API HTML. |
-| `npm run typecheck` | Run the strict TypeScript project build without pretty output. |
-| `npm run lint` | Run ESLint across the repository. |
-| `npm run test` | Run the Vitest suite once. |
-| `npm run test:watch` | Run Vitest in watch mode. |
-| `npm run build` | Type-check and create the production bundle in `dist/`. |
-| `npm run preview` | Serve the production bundle locally for a final smoke test. |
-
-## Test with ChatGPT site tools
-
-At the time of the WebMCP Challenge, official OpenAI documentation says site tools
-work in the latest ChatGPT desktop app with GPT-5.6 Sol or GPT-5.6 Terra. GPT-5.6
-Luna currently has WebMCP disabled, and site tools are not available in Enterprise
-or Edu workspaces. Availability also depends on rollout.
-
-1. Run the app locally as above, or deploy the static build to HTTPS.
-2. In the latest ChatGPT desktop app, select GPT-5.6 Sol or GPT-5.6 Terra.
-3. Open the app URL in ChatGPT's built-in browser.
-4. Select **Site tools** in the browser address bar, then **Available site tools**.
-5. Confirm that all five tool names listed above are present.
-6. Copy the fictional prompt below into the chat beside the open page.
-
-```text
-Help me prepare an inquiry for a 20-person creative coding and mentorship workshop on October 10, 2026. The goal is to pair early-career developers with local mentors for a collaborative workshop. My name is Maya Chen and my email is maya.chen@example.com. My phone is 215-555-0134, but use only information the site says is required or currently authorized. Prepare the inquiry for my review, but do not submit it until I approve the exact disclosure in the page.
+```bash
+npm run typecheck
+npm run lint
+npm run test
+npm run build
+npm run preview -- --host 127.0.0.1
 ```
 
-7. Confirm the agent calls `get_intake_requirements` and drafts into the visible
-   form. Phone begins unauthorized. If the first draft includes it, the expected
-   result is an atomic rejection followed by a retry without phone.
-8. Have the agent call `prepare_submission_review`. Confirm that the page shows the
-   exact disclosed and withheld fields, a `reviewId`, and a digest.
-9. Before approving, explicitly ask the agent to call `submit_approved_intake` with
-   that review ID to test the gate. It must return a structured approval-required
-   failure and leave state unchanged.
-10. Choose **Return to editing**, change one field, and confirm the old review ID
-    can no longer be submitted. Prepare a fresh review for the changed draft.
-11. Click **Approve this exact disclosure** yourself in the webpage.
-12. Ask the agent to submit the newly approved review and retrieve the disclosure
-    receipt.
-13. Confirm the receipt says **Local demonstration only**, lists phone as withheld,
-    and states that the simulated submission caused no network transmission.
+The production bundle is written to `dist/`.
 
-ChatGPT's built-in browser currently supports only part of the proposed WebMCP
-standard. Permission Slip therefore uses imperative JavaScript registration in the
-top-level page, not declarative form attributes or iframe registration.
+## Exact fictional prompt
 
-### Local compatibility probe
+Use this single prompt for rehearsal and recording:
 
-On September 3, 2026, the local app was opened in ChatGPT's in-app browser. The
-browser discovered all five registered tools, and a complete tool-driven flow
-passed: unauthorized phone rejection, compliant draft, frozen review,
-pre-approval submission rejection, visible human approval, submission, and receipt
-retrieval. That browser build omitted the draft specification's optional invocation
-context argument, so Permission Slip supplies an inert fallback signal when it is
-absent while preserving real cancellation signals when provided.
+```text
+Help me prepare a Village Alchemist project inquiry. My name is Maya Chen and my email is maya.chen@example.com. I want to turn a rough product idea into a working prototype in eight weeks, with a $15,000–$25,000 constraint. The concept and core audience are defined, but the product flow and technical approach still need shaping. I am requesting a 30-minute discovery call and prefer a reply by email. Use the budget only if I enable its visible inclusion control; otherwise omit it. Draft the inquiry for my review, but do not verify my facts, grant permissions, approve it, or submit it for me.
+```
 
-Chrome DevTools Protocol network traces around successful simulated submissions
-from both development and final production-preview builds recorded zero
-`Network.requestWillBeSent` events. A second check must still be run against the
-final deployed HTTPS origin because browser builds and hosting headers can differ.
+## Exact 60–90 second demo
 
-The challenge rules also permit Chrome 149 or later with
-`chrome://flags/#enable-webmcp-testing` enabled and the browser restarted. The
-ChatGPT path above is the primary end-to-end agent test because it includes a
-compatible agent as well as the browser API.
+| Time | Action | Narration |
+| --- | --- | --- |
+| 0:00–0:08 | Open the empty page with its WebMCP-ready indicator visible. | “Permission Slip turns a rough request into a qualified project inquiry, while the person keeps every consequential decision.” |
+| 0:08–0:12 | Turn on the visible “Include budget or constraints” control. | “Maya alone decides whether this optional context can enter the inquiry.” |
+| 0:12–0:24 | Paste the fictional prompt and let the agent inspect requirements and draft. | “The agent discovers what this page accepts, then structures Maya’s goal, background, timeline, authorized budget, contact preference, and requested discovery call in the live form.” |
+| 0:24–0:35 | Point to the updated draft and provenance labels. | “The page shows where each value came from. The agent can suggest; it cannot silently verify facts or invent what Maya did not provide.” |
+| 0:35–0:50 | In the page, verify the draft, confirm the discovery-call next step, allow a project response by email, and leave ongoing updates off. | “These are human-only controls. Permission to answer this inquiry is explicit, and optional ongoing updates remain separate and off.” |
+| 0:50–1:03 | Have the agent prepare the review; show the destination, exact values, permissions, review ID, revision, and digest. | “The review freezes exactly what will be finalized. Any edit now invalidates this approval boundary.” |
+| 1:03–1:12 | Click the visible approval control yourself. | “Only the person can approve this exact snapshot.” |
+| 1:12–1:25 | Ask the agent to submit the approved review and retrieve the receipt. | “The agent can complete only the review Maya approved. A retry resolves to the same browser-local result.” |
+| 1:25–1:30 | Show the receipt and local-only statement. | “The receipt records the requested next step, permissions, provenance, and digest. This demo sends no network submission.” |
 
-### Ordinary-browser fallback
+## Ordinary-browser fallback
 
-Open the app in a browser without `document.modelContext`. The support indicator
-should explain that WebMCP is unavailable, while the form, review, human approval,
-local submission, receipt, and reset workflow remain usable:
+In a browser without `document.modelContext`, complete the same flow manually:
 
-1. Leave every optional-disclosure toggle off and complete the six required Maya
-   Chen fields.
-2. Click **Prepare exact review** and confirm that required fields appear under
-   Required information while all four optional fields appear under Withheld.
-3. Choose **Return to editing**, change a field, and prepare a new review. Confirm
-   that it has a new review ID and digest.
-4. Click **Approve this exact disclosure**, then **Complete local submission**.
-5. Confirm the receipt matches the frozen review and says **Local demonstration
-   only**.
-6. Copy the receipt JSON, reload the page to verify persistence, then use the
-   human-only **Reset local demo** control and confirm the demo returns to `empty`.
+1. Load the fictional rehearsal data or enter it in the form.
+2. Verify the proposed values and requested next step.
+3. Permit a direct project response and leave ongoing updates withheld.
+4. Prepare the exact review.
+5. Approve it through the visible human control.
+6. Complete the simulated local submission and inspect the receipt.
+7. Reload to confirm same-origin persistence, then use the human-only reset.
 
-## Deploy the static build
+## Static Cloudflare preview
 
-No deployment is performed by this repository. Any static HTTPS host can serve the
-app:
+The app can be hosted as prebuilt static assets on an isolated Cloudflare Workers
+version preview. Hosting does not add a backend or change the simulated submission
+into a network delivery.
 
-1. Run `npm ci`.
-2. Run `npm run typecheck`, `npm run lint`, `npm run test`, and `npm run build`.
-3. Configure the host's build command as `npm run build` and publish directory as
-   `dist` using Node.js 22.
-4. Deploy without authentication so challenge judges can open the live URL.
-5. Open the production URL directly and after a reload.
-6. Repeat the five-tool ChatGPT test above against the deployed origin.
-7. In browser developer tools, confirm the simulated submission produces no
-   network request.
+Judge-ready preview:
+[judge-demo-permission-slip-webmcp-judge-preview.mjohnson1307.workers.dev](https://judge-demo-permission-slip-webmcp-judge-preview.mjohnson1307.workers.dev)
 
-Keep the deployed app available through the challenge judging period.
+1. Run `npm ci` and all four verification gates above.
+2. Build `dist/` with `npm run build`.
+3. Validate the checked-in assets-only configuration:
 
-## Demo media
+   ```bash
+   npx wrangler@latest deploy --dry-run
+   ```
 
-- **Product screenshot:** `[ADD FINAL DEPLOYED SCREENSHOT]`
-- **Public demo video:** `[ADD PUBLIC YOUTUBE URL]`
+4. The first time only, create the uniquely named static Worker with
+   `npx wrangler@latest deploy`. It has no custom domain, route, binding, or
+   server-side code. Then upload the traffic-isolated judge version:
+
+   ```bash
+   npx wrangler@latest versions upload --preview-alias judge-demo
+   ```
+
+5. Use only the generated versioned or aliased `workers.dev` preview URL. Do not
+   promote the version, attach a production route or custom domain, add Worker
+   code, create a database, or enable analytics for this demo.
+6. Smoke-test direct navigation, refresh, responsive layout, all five site tools,
+   the complete approved flow, stale-review rejection, retry behavior, and receipt
+   recovery on the deployed origin.
+7. Inspect console and network activity and confirm the simulated submission sends
+   no application request.
+
+See Cloudflare’s current [Static Assets](https://developers.cloudflare.com/workers/static-assets/)
+and [Preview URLs](https://developers.cloudflare.com/workers/versions-and-deployments/preview-urls/)
+documentation before deployment.
+
+## Honest limitations
+
+- The inquiry is not delivered to Village Alchemist; submission is simulated.
+- Receipts exist only in browser storage for one origin and can be changed or
+  deleted by anyone with local page or storage access.
+- There is no identity verification, trusted timestamp, signed receipt, remote
+  destination verification, retention policy, or cross-device recovery.
+- WebMCP availability depends on the browser or host application. The form remains
+  the supported fallback.
+- This demonstration uses fictional data and must not be used for real personal or
+  confidential information.
+
+## Focused documentation
+
+- [WebMCP reference](./docs/WEBMCP.md)
+- [Inquiry workflow](./docs/ARCHITECTURE.md)
+- [Privacy model](./docs/PRIVACY_MODEL.md)
+- [Submission and recording copy](./SUBMISSION.md)
 
 ## References
 
 - [OpenAI: Site tools (WebMCP)](https://learn.chatgpt.com/docs/webmcp)
 - [WebMCP draft specification](https://webmachinelearning.github.io/webmcp/)
-- [WebMCP repository and TypeScript types guidance](https://github.com/webmachinelearning/webmcp)
 - [OpenAI WebMCP Challenge](https://openai.com/webmcp-challenge/)
-- [Challenge requirements and rules](https://webmcp.devpost.com/rules)
+- [Challenge rules](https://webmcp.devpost.com/rules)
 
 ## License
 

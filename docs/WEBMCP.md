@@ -1,46 +1,32 @@
 # WebMCP reference
 
-Permission Slip uses WebMCP because the agent and person need to collaborate on
-the same live page and the same local workflow state. A separate MCP server would
-add a second state boundary and is unnecessary for this browser-only
-demonstration. Permission Slip exposes no HTTP API.
+Permission Slip uses WebMCP for one task: helping a person prepare a Village
+Alchemist project inquiry in the same page where the person verifies, permits, and
+approves it.
 
-The [canonical contract registry](../src/contracts/registry.ts) is the source for
-tool names, descriptions, JSON Schemas, examples, workflow metadata, errors, and
-privacy declarations. Runtime WebMCP registration and generated documentation
-project that registry rather than maintaining separate schemas.
+The application exposes no HTTP submission API. The ordinary form remains fully
+usable when WebMCP is unavailable.
 
-## Discovery and registration
+## Registration
 
-On application startup, the controller:
+On startup, the top-level page:
 
-1. checks for a top-level `document.modelContext.registerTool` function;
-2. constructs the five runtime tools from the canonical contracts and their
-   existing executors;
+1. checks for `document.modelContext.registerTool`;
+2. constructs the five product-specific tools;
 3. registers them imperatively with one lifecycle `AbortController`; and
-4. reports `unsupported`, `registering`, `ready`, `error`, or `stopped` to the UI.
+4. reports unsupported, registering, ready, error, or stopped status in the UI.
 
-Calls are validated again at runtime because a declared JSON Schema is not an
-authorization boundary. Each invocation resolves the current store adapter, runs
-the domain state engine behind the shared human/agent store, and returns JSON-safe
-data.
-Stopping the controller aborts its registrations. When an execution signal is
-provided, asynchronous review and submission work checks it before committing.
-The two read tools carry `readOnlyHint`; tools that return human-authored snapshot
-values carry `untrustedContentHint`.
+Every invocation resolves the current shared store rather than a captured render.
+Declared schemas document the expected shape, while runtime and domain validation
+enforce the actual boundary. Read operations carry `readOnlyHint`; operations that
+return human-authored values carry `untrustedContentHint`.
 
-The current browser registration type accepts an input schema but has no
-`outputSchema` registration field. Output schemas therefore remain canonical
-contract metadata for the Explorer, generated artifacts, tests, and future
-projections; handlers return the documented envelope directly.
-
-This follows the current [OpenAI Site tools guidance](https://learn.chatgpt.com/docs/webmcp):
-imperative JavaScript registration in the top-level page, narrow inputs, existing
-application validation and permissions, and a preserved ordinary-browser UI.
+Permission Slip does not install a WebMCP polyfill, register from an iframe, or
+create a network endpoint as a fallback.
 
 ## Result envelope
 
-Success:
+Successful calls return:
 
 ```json
 {
@@ -49,7 +35,7 @@ Success:
 }
 ```
 
-Failure:
+Rejected calls return a structured, truthful failure:
 
 ```json
 {
@@ -65,144 +51,144 @@ Failure:
 }
 ```
 
-Domain failures may add `details.fields` and `details.issues`. Contract-validation
-failures use `details.issues` with a JSON path, code, and message. Cancellation is
-propagated as an aborted execution rather than reported as a successful tool
-result.
+Validation failures may include safe field names and issue descriptions. They do
+not convert a rejected operation into partial success.
 
 ## Tool catalog
 
 ### `get_intake_requirements`
 
-- **Mode:** read-only
-- **Input:** `{}`; additional properties are rejected.
-- **Successful states:** all workflow states.
-- **Output:** required field names, optional field names, currently authorized
-  optional fields, never-collected categories, current workflow status, and
-  instructions.
-- **Transition:** none.
-- **Disclosure:** classifications and workflow metadata; no intake values.
+- **Mode:** read-only.
+- **Input:** an empty object.
+- **Purpose:** read the current project-inquiry fields, optional field policy,
+  response-permission state, workflow status, and next-step guidance before
+  drafting.
+- **Does not do:** return hidden draft values, verify facts, or change state.
 
-Use this first. Authorization is stateful, so an agent should not infer that an
-optional field is allowed from prior conversation.
+An agent should call this first. A value mentioned in chat is not automatically an
+allowed or verified inquiry value.
 
 ### `draft_intake`
 
-- **Mode:** state-changing local draft replacement.
-- **Input:** one complete object with six required fields and, only when currently
-  authorized, up to four optional fields. `additionalProperties` is `false`.
-- **Successful states:** `empty`, `draft`, `review_pending`, and `approved`.
-- **Output:** accepted field names, withheld optional field names, `draft` status,
-  and the recommended next action.
-- **Transition:** any successful non-terminal call moves to `draft`; an existing
-  review and approval are invalidated.
-- **Disclosure:** the six required values plus only optional values already
-  authorized by the human.
+- **Mode:** local state change.
+- **Input:** one complete proposed inquiry using only the current accepted fields.
+- **Purpose:** turn the person’s rough project description into a structured,
+  validated draft visible in the page.
+- **Transition:** a successful call moves the workflow to draft and invalidates an
+  older review or approval.
+- **Does not do:** confirm the requested next step, grant response permission,
+  permit ongoing updates, mark assistant suggestions as human-verified, approve,
+  or submit.
 
-The write is atomic. Unknown properties, malformed values, missing required
-properties, or one unauthorized optional property reject the complete proposal.
-The tool cannot authorize a field, approve, or submit.
-
-If the human previously entered an optional value and later turned its disclosure
-toggle off, an agent replacement preserves that local value privately. It remains
-absent from the frozen review and tool results unless the human reauthorizes it.
+The write is atomic. Unknown fields, malformed values, missing required values, or
+unauthorized optional values reject the whole proposal. Missing information stays
+missing; the tool must not fabricate a fact to make the draft complete.
 
 ### `prepare_submission_review`
 
-- **Mode:** state-changing local review preparation.
-- **Input:** `{}`; additional properties are rejected.
-- **Successful states:** `draft`, `review_pending`, or `approved`, provided the
-  current draft is complete and valid.
-- **Output:** `reviewId`, SHA-256 digest, exact disclosed values, withheld optional
-  field names, and the required human action.
-- **Transition:** creates or replaces the frozen review and moves to
-  `review_pending`; any former approval is cleared.
-- **Disclosure:** the exact candidate snapshot that the human must inspect.
+- **Mode:** local state change.
+- **Input:** an empty object.
+- **Purpose:** validate the current inquiry and freeze the exact candidate
+  disclosure for visible review.
+- **Output:** the review identifier, digest, and summary of the exact frozen
+  values, requested next step, permissions, and withheld information.
+- **Transition:** moves a valid draft to review pending and clears any former
+  approval.
+- **Does not do:** verify values for the person, create permission, approve, or
+  finalize.
 
-Preparing a review is not approval. A replacement review gets a new identity and
-must be approved separately.
+Review preparation requires the human-only prerequisites to be complete, including
+confirmation of a relevant requested next step and the direct project-response
+decision. Preparing a review is never treated as approval.
 
 ### `submit_approved_intake`
 
-- **Mode:** consequential local finalization; no network transmission.
-- **Input:** `{ "reviewId": "..." }` with no additional properties.
-- **Successful state:** `approved` only, with a matching live review, revision,
-  approval, canonical snapshot, and recomputed digest.
-- **Output:** confirmation, receipt ID, review ID, and `submitted` status.
-- **Transition:** `approved` to `submitted`.
-- **Human prerequisite:** the person must use the visible UI to approve the exact
-  frozen review.
-- **Disclosure:** finalizes only that reviewed snapshot into local application
-  state, persisted in browser storage when available.
+- **Mode:** consequential browser-local finalization; no application network
+  request.
+- **Input:** the exact current review identifier.
+- **Purpose:** finalize only an unchanged review that the person already approved
+  through the visible page.
+- **Output:** confirmation, receipt identifier, review identifier, and submitted
+  status.
+- **Human prerequisite:** matching approval for the current review ID, revision,
+  canonical snapshot, and digest.
+- **Does not do:** deliver an inquiry to Village Alchemist, infer approval from
+  chat, or bypass a stale review.
 
-The supplied review ID is necessary but not sufficient. The operation repeats
-freshness and integrity checks immediately before creating the receipt.
+Immediately before finalization, the operation checks current qualification,
+permissions, review identity, revision, canonical snapshot, and digest. The receipt
+is created from the frozen review rather than mutable form state. Repeating the
+same approved finalization returns the existing result instead of creating a
+duplicate receipt.
 
 ### `get_disclosure_receipt`
 
 - **Mode:** read-only.
-- **Input:** optional `receiptId`; omit it for the latest receipt. Additional
-  properties are rejected.
-- **Successful state:** `submitted`, when a matching local receipt exists.
-- **Output:** receipt and review IDs, timestamp, exact disclosed values, withheld
-  optional fields, never-collected categories, snapshot digest, local-only
-  destination, and the no-network statement.
-- **Transition:** none.
-- **Disclosure:** the already finalized local snapshot and its disclosure audit
-  metadata.
+- **Input:** an optional receipt identifier; omit it for the latest receipt on the
+  current browser origin.
+- **Purpose:** return the finalized local record, including outcome, exact approved
+  values, requested next step, permissions granted and withheld, provenance,
+  destination, timestamp, review revision, and digest.
+- **Does not do:** list another origin or device, prove local storage integrity, or
+  confirm remote delivery.
 
-## Structured error taxonomy
+## Deliberately human-only actions
 
-| Code | Meaning | Typical recovery |
-| --- | --- | --- |
-| `INVALID_INPUT` | Tool or domain input is malformed or incomplete for that operation. | Correct every reported issue and retry the complete call. |
-| `UNKNOWN_FIELDS` | A draft contains properties outside the intake model. | Use only fields returned by `get_intake_requirements`. |
-| `UNAUTHORIZED_OPTIONAL_FIELDS` | The agent supplied an optional field whose human toggle is off. | Omit it; only the human can change disclosure permissions. |
-| `INCOMPLETE_DRAFT` | The current draft cannot form a valid review. | Complete or correct reported fields, then prepare again. |
-| `REVIEW_NOT_FOUND` | Submission or approval has no current review. | Prepare a fresh review. |
-| `APPROVAL_REQUIRED` | A current review exists but lacks matching human approval. | Wait for approval in the visible UI. |
-| `STALE_REVIEW` | Review ID, revision, approval, or current disclosure no longer matches. | Prepare and approve a fresh review. |
-| `DIGEST_MISMATCH` | Current, reviewed, and approved digest values differ. | Prepare and approve a fresh review. |
-| `DIGEST_UNAVAILABLE` | Web Crypto could not create or verify the digest. | Retry in a browser with Web Crypto support. |
-| `RECEIPT_NOT_FOUND` | No requested or latest receipt exists. | Submit an approved intake or use a known receipt ID. |
-| `STALE_OPERATION` | State changed while an asynchronous review or submit was in flight. | Inspect current state and retry. |
-| `SUBMITTED_TERMINAL` | The local demonstration is already finalized. | Retrieve its receipt or ask the human to reset. |
-| `TOOL_EXECUTION_FAILED` | An unexpected executor failure was caught. | Inspect the visible workflow before retrying. |
-| `INVALID_TOOL_RESULT` | A result could not be represented as JSON. | Do not retry unchanged; inspect the implementation. |
+The following visible actions are intentionally absent from the WebMCP registry:
 
-Rejected mutating domain operations can append a value-free activity entry, but
-they do not partially apply their intended draft/review/submission mutation.
-
-## Deliberately absent tools
-
-The following capabilities exist in the human interface but are intentionally
-absent from the WebMCP registry:
-
-- authorize or revoke optional-field disclosure;
+- verify a proposed value;
+- confirm the requested next step;
+- permit or withhold a direct response about the project;
+- permit or withhold optional ongoing updates;
 - approve a frozen review;
 - return to editing; and
-- reset local state.
+- reset browser-local state.
 
-This asymmetry is part of the consent model. In particular, exposing
-`approve_review` would collapse the human prerequisite into an agent-controlled
-step. The absence of such a tool is an interface and authorization boundary, not
-a claim that page JavaScript, developer tools, extensions, or general-purpose
-browser automation cannot manipulate a local page.
+This asymmetry is the product’s authority boundary. Chat text such as “I approve”
+does not create in-page approval, and the agent cannot invoke an approval operation
+because no such tool is registered.
+
+The boundary does not claim that developer tools, extensions, page scripts, or
+general-purpose browser automation cannot manipulate a local page.
+
+## Expected rejections
+
+Common structured failures include:
+
+| Situation | Required behavior |
+| --- | --- |
+| Unknown or malformed draft field | Reject the complete draft and identify the safe correction. |
+| Unauthorized optional value | Reject atomically; only the person can change permission. |
+| Missing or ambiguous required value | Keep the draft visible and explain what must be supplied or verified. |
+| No confirmed relevant next step | Do not qualify or prepare a submittable review. |
+| No project-response decision | Wait for the visible human control. |
+| Submission before approval | Return approval required and leave business state unchanged. |
+| Edit after review | Reject the stale review and require a fresh review and approval. |
+| Digest mismatch | Reject finalization and require a fresh review. |
+| Repeated approved finalization | Return the existing receipt without creating another. |
+| Missing receipt | Explain that no matching browser-local receipt exists. |
+| State changed during async work | Reject the stale operation instead of overwriting newer state. |
+
+Rejected mutations must never be described as successful, and a tool failure must
+not manufacture a success receipt.
 
 ## Ordinary-browser fallback
 
-If `document.modelContext` is unavailable, registration reports `unsupported`
-and the application continues as a normal form. The person can edit, set optional
-disclosure permissions, prepare a review, approve it, complete the same simulated
-local submission, inspect the receipt, return to editing, and reset. Permission
-Slip does not install a WebMCP polyfill or create an alternate network API.
+If `document.modelContext` is unavailable, registration reports an unsupported
+state and the application continues as a normal form. The person can draft, verify,
+set permissions, prepare a review, approve, complete the same simulated local
+finalization, inspect the receipt, and reset.
 
-## Machine-readable reference
+## Storage and network boundary
 
-- `docs/generated/webmcp-contracts.json` is the native manifest of canonical tool
-  contracts.
-- `docs/generated/openapi.json` is an OpenAPI 3.1 **documentation projection**.
-  Its synthetic operations are marked as WebMCP tools, documentation-only, and
-  non-network endpoints. It is not callable HTTP API documentation.
+WebMCP handlers and human controls share versioned `localStorage` state for the
+current origin. When storage is unavailable, the page safely falls back to
+in-memory state for that session.
 
-Regenerate these artifacts with `npm run docs`; do not edit them by hand.
+No tool creates a backend request. Hosted asset loading still uses the network,
+but drafting, review, approval, simulated submission, receipt retrieval, and reset
+do not. The receipt therefore describes a browser-local demonstration, not a
+delivered business inquiry.
+
+The SHA-256 digest detects snapshot changes. It does not prove identity, human
+understanding, local storage integrity, or a trusted timestamp.

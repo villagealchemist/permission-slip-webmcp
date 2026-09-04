@@ -1,98 +1,104 @@
 import type {
+  ContactPermissionDefinition,
+  ContactPermissions,
   FieldDefinition,
   IntakeFieldName,
   NeverCollectedDefinition,
   OptionalDisclosureAuthorizations,
 } from './types'
 
-/** Required-field policy exposed consistently to validation, UI, and tools. */
+/** Required fields for one actionable Village Alchemist project inquiry. */
 export const REQUIRED_FIELD_DEFINITIONS = [
   {
     name: 'contactName',
     label: 'Contact name',
-    description: 'The name of the person responsible for the inquiry.',
+    description: 'The person asking Village Alchemist to respond.',
     type: 'string',
     required: true,
   },
   {
     name: 'email',
     label: 'Email',
-    description: 'A valid contact email address.',
+    description: 'A valid address for the requested project response.',
     type: 'string',
     required: true,
   },
   {
-    name: 'eventType',
-    label: 'Event type',
-    description: 'A concise description of the proposed workshop or event.',
+    name: 'inquiryType',
+    label: 'Inquiry type',
+    description: 'Prototype, website, product strategy, creative collaboration, or other.',
     type: 'string',
     required: true,
   },
   {
-    name: 'preferredDate',
-    label: 'Preferred date',
-    description: 'The preferred event date in YYYY-MM-DD format.',
+    name: 'desiredOutcome',
+    label: 'Desired outcome',
+    description: 'The concrete result the person wants the project to produce.',
     type: 'string',
     required: true,
   },
   {
-    name: 'estimatedAttendeeCount',
-    label: 'Estimated attendee count',
-    description: 'A whole-number estimate from 1 to 1,000 attendees.',
-    type: 'integer',
-    required: true,
-  },
-  {
-    name: 'eventGoal',
-    label: 'Event goal',
-    description: 'What the organizer hopes the workshop will accomplish.',
+    name: 'relevantBackground',
+    label: 'Relevant background',
+    description: 'Enough existing context to make a first response useful.',
     type: 'string',
     required: true,
   },
-] satisfies FieldDefinition<
-  | 'contactName'
-  | 'email'
-  | 'eventType'
-  | 'preferredDate'
-  | 'estimatedAttendeeCount'
-  | 'eventGoal'
->[]
+  {
+    name: 'timeline',
+    label: 'Timeline',
+    description: 'The target window, deadline, or current timing constraint.',
+    type: 'string',
+    required: true,
+  },
+  {
+    name: 'preferredResponseMethod',
+    label: 'Preferred response method',
+    description: 'Email, phone, or video call.',
+    type: 'string',
+    required: true,
+  },
+  {
+    name: 'requestedNextStep',
+    label: 'Requested next step',
+    description: 'A discovery call, written response, or project review.',
+    type: 'string',
+    required: true,
+  },
+] satisfies FieldDefinition[]
 
-/** Optional-field policy; every entry must remain gated by human authorization. */
+/** Optional information remains behind separate visible disclosure controls. */
 export const OPTIONAL_FIELD_DEFINITIONS = [
   {
     name: 'phone',
     label: 'Phone',
-    description: 'A contact phone number, disclosed only with human authorization.',
+    description: 'A callback number, disclosed only with human authorization.',
     type: 'string',
     required: false,
   },
   {
-    name: 'budgetRange',
-    label: 'Budget range',
-    description: 'An approximate budget range, disclosed only with human authorization.',
+    name: 'budgetOrConstraints',
+    label: 'Budget or constraints',
+    description: 'Planning boundaries the person intentionally chooses to share.',
     type: 'string',
     required: false,
   },
   {
-    name: 'socialHandle',
-    label: 'Social handle',
-    description: 'A social account handle, disclosed only with human authorization.',
+    name: 'organization',
+    label: 'Organization',
+    description: 'An organization name, disclosed only when relevant and authorized.',
     type: 'string',
     required: false,
   },
   {
-    name: 'additionalNotes',
-    label: 'Additional notes',
-    description: 'Extra context, disclosed only with human authorization.',
+    name: 'additionalContext',
+    label: 'Additional context',
+    description: 'Extra project context intentionally included in this inquiry.',
     type: 'string',
     required: false,
   },
-] satisfies FieldDefinition<
-  'phone' | 'budgetRange' | 'socialHandle' | 'additionalNotes'
->[]
+] satisfies FieldDefinition[]
 
-/** Lookup view of the ordered definitions without creating a second policy source. */
 export const FIELD_DEFINITIONS: Record<IntakeFieldName, FieldDefinition> =
   Object.fromEntries(
     [...REQUIRED_FIELD_DEFINITIONS, ...OPTIONAL_FIELD_DEFINITIONS].map(
@@ -100,46 +106,68 @@ export const FIELD_DEFINITIONS: Record<IntakeFieldName, FieldDefinition> =
     ),
   ) as Record<IntakeFieldName, FieldDefinition>
 
-/** Explicit collection exclusions and the product reason for each boundary. */
+export const CONTACT_PERMISSION_DEFINITIONS = [
+  {
+    name: 'projectResponse',
+    label: 'Reply about this project',
+    description: 'Allows one response to the explicitly requested project next step.',
+    requiredForSubmission: true,
+  },
+  {
+    name: 'occasionalUpdates',
+    label: 'Occasional Village Alchemist updates',
+    description: 'Optional continued contact, kept separate from the project response.',
+    requiredForSubmission: false,
+  },
+] satisfies ContactPermissionDefinition[]
+
 export const NEVER_COLLECTED_DEFINITIONS = [
   {
     name: 'streetAddress',
     label: 'Street address',
-    reason: 'A workshop inquiry does not need a home address.',
+    reason: 'A first project inquiry does not need a home address.',
   },
   {
-    name: 'employer',
-    label: 'Employer',
-    reason: 'Employment details are unrelated to this inquiry.',
+    name: 'employmentHistory',
+    label: 'Employment history',
+    reason: 'A project inquiry needs relevant context, not employment history.',
   },
   {
     name: 'preciseLiveLocation',
     label: 'Precise live location',
-    reason: 'Live location is never relevant to preparing the request.',
+    reason: 'Live location is not relevant to the requested response.',
   },
   {
     name: 'paymentInformation',
     label: 'Payment information',
-    reason: 'This local demonstration does not process payment.',
+    reason: 'This demonstration does not process payment.',
   },
   {
     name: 'unrelatedPrivateConversationHistory',
     label: 'Unrelated private conversation history',
-    reason: 'Private conversation history is outside the intake scope.',
+    reason: 'Unrelated conversations remain outside this inquiry.',
   },
 ] satisfies NeverCollectedDefinition[]
 
-/** Privacy-preserving default: no optional disclosure begins authorized. */
 export const EMPTY_OPTIONAL_AUTHORIZATIONS: OptionalDisclosureAuthorizations = {
   phone: false,
-  budgetRange: false,
-  socialHandle: false,
-  additionalNotes: false,
+  budgetOrConstraints: false,
+  organization: false,
+  additionalContext: false,
 }
 
-/** Bounds local audit growth so persistence remains predictable. */
+export const EMPTY_CONTACT_PERMISSIONS: ContactPermissions = {
+  projectResponse: false,
+  occasionalUpdates: false,
+}
+
+export const DEFAULT_INQUIRY_PROVENANCE = {
+  entrySource: 'direct',
+  referralSource: null,
+  campaign: null,
+} as const
+
 export const ACTIVITY_LIMIT = 100
 
-/** Agent guidance that preserves the human-only approval boundary. */
 export const INTAKE_REQUIREMENTS_INSTRUCTIONS =
-  'Prepare the intake using only required fields and currently authorized optional fields. Submission remains blocked until the human approves the exact review snapshot in the webpage.'
+  'Draft only the required fields and currently authorized optional fields. The person must verify assistant suggestions, confirm the requested next step, grant project-response permission, and approve the exact frozen review before submission.'

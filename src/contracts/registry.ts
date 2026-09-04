@@ -7,7 +7,7 @@ import {
   submitApprovedIntakeContract,
 } from './tools'
 
-/** Ordered canonical registry used for browser registration and documentation. */
+/** Ordered list used to register this demo's five browser tools. */
 export const WEBMCP_TOOL_CONTRACTS = Object.freeze([
   getIntakeRequirementsContract,
   draftIntakeContract,
@@ -20,12 +20,12 @@ export const WEBMCP_TOOL_CONTRACTS = Object.freeze([
 export type PermissionSlipToolName =
   (typeof WEBMCP_TOOL_CONTRACTS)[number]['name']
 
-/** Ordered tool names derived from the canonical registry. */
+/** Ordered names of the five inquiry tools. */
 export const PERMISSION_SLIP_TOOL_NAMES = Object.freeze(
   WEBMCP_TOOL_CONTRACTS.map((contract) => contract.name),
 ) as readonly PermissionSlipToolName[]
 
-/** Constant-time contract lookup for typed runtime bindings and documentation. */
+/** Typed lookup used by the in-page runtime bindings. */
 export const WEBMCP_TOOL_CONTRACT_BY_NAME = Object.freeze(
   Object.fromEntries(
     WEBMCP_TOOL_CONTRACTS.map((contract) => [contract.name, contract]),

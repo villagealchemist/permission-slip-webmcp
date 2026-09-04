@@ -7,6 +7,11 @@ import {
   type SubmitApprovedIntakeInput,
   type ToolFailure,
 } from './types'
+import {
+  INQUIRY_TYPES,
+  PREFERRED_RESPONSE_METHODS,
+  REQUESTED_NEXT_STEPS,
+} from '../domain'
 
 export interface ValidationIssue {
   path: string
@@ -123,15 +128,36 @@ function validateString(
   }
 }
 
-function isIsoCalendarDate(value: string): boolean {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
-  const [year, month, day] = value.split('-').map(Number)
-  const date = new Date(Date.UTC(year, month - 1, day))
-  return (
-    date.getUTCFullYear() === year &&
-    date.getUTCMonth() === month - 1 &&
-    date.getUTCDate() === day
-  )
+function validateEnum(
+  input: Record<string, unknown>,
+  key: string,
+  allowed: readonly string[],
+  issues: ValidationIssue[],
+): void {
+  const value = input[key]
+  if (value === undefined) {
+    issues.push({
+      path: key,
+      code: 'missing_property',
+      message: `Property "${key}" is required.`,
+    })
+    return
+  }
+  if (typeof value !== 'string') {
+    issues.push({
+      path: key,
+      code: 'invalid_type',
+      message: `Property "${key}" must be a string.`,
+    })
+    return
+  }
+  if (!allowed.includes(value.trim())) {
+    issues.push({
+      path: key,
+      code: 'invalid_format',
+      message: `Property "${key}" must be one of: ${allowed.join(', ')}.`,
+    })
+  }
 }
 
 export function validateEmptyObject(input: unknown): ValidationResult<JsonObject> {
@@ -165,53 +191,29 @@ export function validateDraftIntake(
     pattern: simpleEmailPattern,
     formatMessage: 'Property "email" must be a plausible email address.',
   })
-  validateString(value, 'eventType', issues, {
-    required: true,
-    minLength: 3,
-    maxLength: 160,
-  })
-  validateString(value, 'preferredDate', issues, {
-    required: true,
-    maxLength: 10,
-  })
-  if (
-    typeof value.preferredDate === 'string' &&
-    !isIsoCalendarDate(value.preferredDate.trim())
-  ) {
-    issues.push({
-      path: 'preferredDate',
-      code: 'invalid_format',
-      message: 'Property "preferredDate" must be a real date in YYYY-MM-DD format.',
-    })
-  }
-  validateString(value, 'eventGoal', issues, {
+  validateEnum(value, 'inquiryType', INQUIRY_TYPES, issues)
+  validateString(value, 'desiredOutcome', issues, {
     required: true,
     minLength: 10,
-    maxLength: 1_000,
+    maxLength: 1_500,
   })
-
-  if (value.estimatedAttendeeCount === undefined) {
-    issues.push({
-      path: 'estimatedAttendeeCount',
-      code: 'missing_property',
-      message: 'Property "estimatedAttendeeCount" is required.',
-    })
-  } else if (!Number.isInteger(value.estimatedAttendeeCount)) {
-    issues.push({
-      path: 'estimatedAttendeeCount',
-      code: 'invalid_type',
-      message: 'Property "estimatedAttendeeCount" must be an integer.',
-    })
-  } else if (
-    (value.estimatedAttendeeCount as number) < 1 ||
-    (value.estimatedAttendeeCount as number) > 1_000
-  ) {
-    issues.push({
-      path: 'estimatedAttendeeCount',
-      code: 'out_of_range',
-      message: 'Property "estimatedAttendeeCount" must be between 1 and 1,000.',
-    })
-  }
+  validateString(value, 'relevantBackground', issues, {
+    required: true,
+    minLength: 10,
+    maxLength: 2_000,
+  })
+  validateString(value, 'timeline', issues, {
+    required: true,
+    minLength: 2,
+    maxLength: 200,
+  })
+  validateEnum(
+    value,
+    'preferredResponseMethod',
+    PREFERRED_RESPONSE_METHODS,
+    issues,
+  )
+  validateEnum(value, 'requestedNextStep', REQUESTED_NEXT_STEPS, issues)
 
   validateString(value, 'phone', issues, {
     minLength: 7,
@@ -220,9 +222,9 @@ export function validateDraftIntake(
     formatMessage:
       'Property "phone" may contain digits, spaces, parentheses, periods, plus signs, and hyphens.',
   })
-  validateString(value, 'budgetRange', issues, { maxLength: 120 })
-  validateString(value, 'socialHandle', issues, { maxLength: 100 })
-  validateString(value, 'additionalNotes', issues, { maxLength: 2_000 })
+  validateString(value, 'budgetOrConstraints', issues, { maxLength: 500 })
+  validateString(value, 'organization', issues, { maxLength: 160 })
+  validateString(value, 'additionalContext', issues, { maxLength: 2_000 })
 
   if (issues.length > 0) return { ok: false, issues }
   return { ok: true, value: value as unknown as DraftIntakeInput }

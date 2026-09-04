@@ -1,43 +1,21 @@
 import {
-  CONTRACT_ERRORS,
   DISCLOSURE_MODEL,
-  DOMAIN_MODEL,
   HUMAN_ONLY_CAPABILITIES,
   WEBMCP_TOOL_CONTRACTS,
   WORKFLOW_INVARIANTS,
-  WORKFLOW_STATES,
-  type ContractErrorCode,
-  type JsonSchema,
 } from '../contracts'
-
-function JsonBlock({ value }: { value: JsonSchema | object }) {
-  return <pre>{JSON.stringify(value, null, 2)}</pre>
-}
-
-function ErrorList({ codes }: { codes: readonly ContractErrorCode[] }) {
-  return (
-    <ul className="error-list">
-      {codes.map((code) => (
-        <li key={code}>
-          <code>{code}</code>
-          <span>{CONTRACT_ERRORS[code].summary}</span>
-        </li>
-      ))}
-    </ul>
-  )
-}
 
 export function ContractExplorer() {
   return (
     <div className="explorer-shell">
       <header className="explorer-hero">
-        <nav className="top-nav" aria-label="Contract Explorer">
+        <nav className="top-nav" aria-label="Inquiry tool reference">
           <a className="wordmark" href="./">
             Permission Slip
           </a>
           <div>
             <a href="#tools">Tools</a>
-            <a href="#workflow">Workflow</a>
+            <a href="#human-only">Human authority</a>
             <a href="#privacy">Privacy</a>
             <a href="https://github.com/villagealchemist/permission-slip-webmcp">
               Source
@@ -47,18 +25,19 @@ export function ContractExplorer() {
 
         <div className="hero-grid">
           <div>
-            <p className="kicker">Canonical contract registry · v0.1</p>
-            <h1>Every capability.<br />Every boundary.</h1>
+            <p className="kicker">Village Alchemist inquiry · judge reference</p>
+            <h1>Five useful tools.<br />One human decision.</h1>
           </div>
           <div className="hero-copy">
             <p>
-              A human-readable view of the same metadata and JSON Schemas used
-              to register Permission Slip’s five browser tools.
+              This page describes only the five in-page operations used by the
+              Permission Slip project-inquiry demo and the decisions intentionally
+              reserved for its visible interface.
             </p>
-            <div className="hero-facts" aria-label="Contract facts">
+            <div className="hero-facts" aria-label="Inquiry reference facts">
               <span><strong>5</strong> site tools</span>
-              <span><strong>4</strong> human-only controls</span>
-              <span><strong>0</strong> network endpoints</span>
+              <span><strong>{HUMAN_ONLY_CAPABILITIES.length}</strong> human-only actions</span>
+              <span><strong>0</strong> submission requests</span>
             </div>
           </div>
         </div>
@@ -66,9 +45,9 @@ export function ContractExplorer() {
         <div className="projection-note">
           <span aria-hidden="true">i</span>
           <p>
-            This explorer documents in-page WebMCP operations registered through{' '}
-            <code>document.modelContext</code>. The OpenAPI artifact is a
-            documentation projection, not an HTTP API.
+            The tools register only on the top-level page through{' '}
+            <code>document.modelContext</code>. They progressively enhance the
+            ordinary form and do not create an HTTP API.
           </p>
         </div>
       </header>
@@ -77,12 +56,12 @@ export function ContractExplorer() {
         <section className="section" id="tools">
           <div className="section-heading">
             <div>
-              <p className="section-index">01 / Tool surface</p>
-              <h2>Five narrow operations</h2>
+              <p className="section-index">01 / Inquiry tools</p>
+              <h2>The complete agent surface</h2>
             </div>
             <p>
-              Registration metadata, inputs, outputs, examples, errors, state
-              transitions, and privacy notes come from one TypeScript registry.
+              Each operation is specific to this single fictional inquiry flow.
+              None can verify a person’s facts, grant permission, or approve.
             </p>
           </div>
 
@@ -109,15 +88,10 @@ export function ContractExplorer() {
                   <div className="tool-title">
                     <div className="badge-row">
                       <span className={`badge ${contract.readOnly ? 'is-read' : 'is-write'}`}>
-                        {contract.readOnly ? 'Read' : 'Local write'}
+                        {contract.readOnly ? 'Read' : 'Local state change'}
                       </span>
-                      <span className="badge">{contract.sideEffect}</span>
-                      {contract.humanApprovalRequired ? (
-                        <span className="badge is-approval">Human approval required</span>
-                      ) : null}
-                      <span className="badge">No network</span>
+                      <span className="badge">No submission request</span>
                     </div>
-                    <p className="tool-summary">{contract.summary}</p>
                     <h3>{contract.title}</h3>
                     <code className="tool-name">{contract.name}</code>
                     <p>{contract.description}</p>
@@ -125,14 +99,6 @@ export function ContractExplorer() {
                 </div>
 
                 <div className="contract-grid">
-                  <div>
-                    <p className="micro-heading">Successful states</p>
-                    <div className="state-list">
-                      {contract.allowedStates.map((state) => (
-                        <code key={state}>{state}</code>
-                      ))}
-                    </div>
-                  </div>
                   <div>
                     <p className="micro-heading">Human prerequisite</p>
                     <p>{contract.humanPrerequisite ?? 'None before invocation.'}</p>
@@ -145,48 +111,10 @@ export function ContractExplorer() {
                     <p className="micro-heading">Local persistence</p>
                     <p>{contract.privacy.dataPersisted}</p>
                   </div>
-                </div>
-
-                <div className="transition-row">
-                  {contract.transitions.map((transition) => (
-                    <div
-                      className="transition"
-                      key={`${transition.from}-${transition.to}`}
-                      title={transition.condition}
-                    >
-                      <code>{transition.from}</code>
-                      <span aria-hidden="true">→</span>
-                      <code>{transition.to}</code>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="details-grid">
-                  <details>
-                    <summary>Input schema</summary>
-                    <JsonBlock value={contract.inputSchema} />
-                  </details>
-                  <details>
-                    <summary>Result schema</summary>
-                    <JsonBlock value={contract.outputSchema} />
-                  </details>
-                  <details>
-                    <summary>Examples ({contract.examples.length})</summary>
-                    {contract.examples.map((example) => (
-                      <div className="example" key={example.title}>
-                        <h4>{example.title}</h4>
-                        <p>{example.description}</p>
-                        <p className="code-label">Input</p>
-                        <JsonBlock value={example.input} />
-                        <p className="code-label">Result</p>
-                        <JsonBlock value={example.result} />
-                      </div>
-                    ))}
-                  </details>
-                  <details>
-                    <summary>Errors ({contract.errors.length})</summary>
-                    <ErrorList codes={contract.errors} />
-                  </details>
+                  <div>
+                    <p className="micro-heading">Network behavior</p>
+                    <p>No inquiry is transmitted. Changes remain in this browser.</p>
+                  </div>
                 </div>
               </article>
             ))}
@@ -196,12 +124,12 @@ export function ContractExplorer() {
         <section className="section section--ink" id="human-only">
           <div className="section-heading">
             <div>
-              <p className="section-index">02 / Authority boundary</p>
-              <h2>Intentionally not tools</h2>
+              <p className="section-index">02 / Human authority</p>
+              <h2>Intentionally absent from the tool list</h2>
             </div>
             <p>
-              These actions stay in the visible human interface. Their absence
-              from the registry is part of the product contract.
+              These actions remain visible and clickable only in the human
+              interface. That is the product boundary judges can test directly.
             </p>
           </div>
           <div className="human-grid">
@@ -209,7 +137,6 @@ export function ContractExplorer() {
               <article key={capability.name}>
                 <span>{String(index + 1).padStart(2, '0')}</span>
                 <h3>{capability.title}</h3>
-                <code>{capability.name}</code>
                 <p>{capability.reason}</p>
               </article>
             ))}
@@ -219,21 +146,13 @@ export function ContractExplorer() {
         <section className="section" id="workflow">
           <div className="section-heading">
             <div>
-              <p className="section-index">03 / Workflow</p>
-              <h2>Consent as a state machine</h2>
+              <p className="section-index">03 / Review binding</p>
+              <h2>Approval applies to one frozen inquiry</h2>
             </div>
             <p>
-              An approval is a narrow binding to one frozen snapshot—not a
-              reusable permission to submit future edits.
+              Review ID, revision, and digest bind approval to exact content.
+              Editing any disclosed value or permission invalidates that review.
             </p>
-          </div>
-          <div className="workflow-track" aria-label="Workflow states">
-            {WORKFLOW_STATES.map((state, index) => (
-              <div key={state}>
-                <span>{String(index + 1).padStart(2, '0')}</span>
-                <code>{state}</code>
-              </div>
-            ))}
           </div>
           <ol className="invariant-list">
             {WORKFLOW_INVARIANTS.map((invariant) => (
@@ -246,11 +165,11 @@ export function ContractExplorer() {
           <div className="section-heading">
             <div>
               <p className="section-index">04 / Disclosure</p>
-              <h2>A deliberately small data model</h2>
+              <h2>Only information needed for this inquiry</h2>
             </div>
             <p>
-              Required fields serve the inquiry. Optional fields need separate
-              authorization. Unrelated categories never enter the model.
+              Required fields make a response possible. Optional fields stay
+              unavailable until the person enables each one in the page.
             </p>
           </div>
           <div className="disclosure-grid">
@@ -264,7 +183,7 @@ export function ContractExplorer() {
               ))}
             </div>
             <div>
-              <p className="disclosure-label">Human-optional</p>
+              <p className="disclosure-label">Optional by visible choice</p>
               {DISCLOSURE_MODEL.optional.map((field) => (
                 <article key={field.name}>
                   <code>{field.name}</code>
@@ -282,81 +201,6 @@ export function ContractExplorer() {
               ))}
             </div>
           </div>
-        </section>
-
-        <section className="section" id="errors">
-          <div className="section-heading">
-            <div>
-              <p className="section-index">05 / Failure contract</p>
-              <h2>Errors explain recovery</h2>
-            </div>
-            <p>
-              Rejections remain distinguishable from success and provide a
-              constrained next step. Cancellation is surfaced separately as an
-              abort rather than a structured failure.
-            </p>
-          </div>
-          <div className="taxonomy">
-            {Object.values(CONTRACT_ERRORS).map((error) => (
-              <article key={error.code}>
-                <div>
-                  <code>{error.code}</code>
-                  <span>{error.source}</span>
-                </div>
-                <p>{error.summary}</p>
-                <small>{error.recovery}</small>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="section section--domain" id="domain">
-          <div className="section-heading">
-            <div>
-              <p className="section-index">06 / Domain model</p>
-              <h2>The types behind the boundary</h2>
-            </div>
-            <p>
-              These framework-neutral concepts let the UI and WebMCP adapter
-              invoke one state engine without duplicating consent rules.
-            </p>
-          </div>
-          <div className="domain-grid">
-            {DOMAIN_MODEL.map((item) => (
-              <article key={item.name}>
-                <code>{item.name}</code>
-                <p>{item.role}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-
-        <section className="section section--architecture" id="architecture">
-          <div className="section-heading">
-            <div>
-              <p className="section-index">07 / Architecture</p>
-              <h2>One engine, two callers</h2>
-            </div>
-            <p>
-              React and WebMCP share the same live store and domain operations.
-              The contract registry describes the tool boundary without gaining
-              authority over approval.
-            </p>
-          </div>
-          <div className="architecture-flow">
-            <div><span>Human</span><strong>React UI</strong></div>
-            <div><span>Agent</span><strong>WebMCP adapter</strong></div>
-            <b aria-hidden="true">↓</b>
-            <div className="is-wide"><span>Shared</span><strong>Permission Slip store</strong></div>
-            <b aria-hidden="true">↓</b>
-            <div className="is-wide"><span>Authoritative</span><strong>Domain state machine</strong></div>
-            <b aria-hidden="true">↓</b>
-            <div className="is-wide"><span>Browser-local</span><strong>Versioned localStorage</strong></div>
-          </div>
-          <p className="architecture-coda">
-            The SHA-256 digest detects snapshot changes. It does not prove human
-            identity, and localStorage is not tamper-proof.
-          </p>
         </section>
       </main>
 

@@ -1,6 +1,6 @@
 import type { WorkflowStatus } from '../domain'
 
-/** JSON Schema fragment used by registrations and generated documentation. */
+/** JSON Schema fragment used by the five inquiry-tool registrations. */
 export type JsonSchema = Readonly<Record<string, unknown>>
 
 /** Failures raised by browser/tool plumbing rather than a domain transition. */
@@ -9,7 +9,7 @@ export type BoundaryErrorCode =
   | 'INVALID_TOOL_RESULT'
   | 'TOOL_EXECUTION_FAILED'
 
-/** Every structured failure code a documented tool can return. */
+/** Every structured failure code an inquiry tool can return. */
 export type ContractErrorCode =
   | import('../domain').DomainErrorCode
   | BoundaryErrorCode
@@ -28,7 +28,7 @@ export interface ContractTransition {
   condition: string
 }
 
-/** One fictional, executable-looking contract example. */
+/** One fictional inquiry-tool example used by local tests and reference copy. */
 export interface ContractExample {
   title: string
   description: string
@@ -42,7 +42,7 @@ export interface ContractAnnotations {
   untrustedContentHint?: boolean
 }
 
-/** Privacy facts an integrator must understand before invoking a tool. */
+/** Privacy facts shown for each inquiry tool. */
 export interface ContractPrivacy {
   dataDisclosed: string
   dataPersisted: string
@@ -52,8 +52,8 @@ export interface ContractPrivacy {
 }
 
 /**
- * Canonical description of one Permission Slip WebMCP tool. Runtime
- * registration and every documentation projection consume this structure.
+ * Description of one of this demo's five Permission Slip WebMCP tools.
+ * Runtime registration consumes this structure directly.
  */
 export interface ToolContract<Name extends string = string> {
   name: Name
@@ -75,7 +75,7 @@ export interface ToolContract<Name extends string = string> {
   annotations?: ContractAnnotations
 }
 
-/** Preserves literal tool names while checking a registry entry's shape. */
+/** Preserves literal tool names while checking one inquiry-tool entry. */
 export function defineToolContract<const Name extends string>(
   contract: ToolContract<Name>,
 ): ToolContract<Name> {
