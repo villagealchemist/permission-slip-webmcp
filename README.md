@@ -1,101 +1,151 @@
-# Second Surface
+# PORT AUTHORITY
 
-> The self-documenting WebMCP explorer.
+> **The harbor master for WebMCP.**
+> No agent docks on vibes.
 
-Every WebMCP-enabled website has two interfaces: the one people see and the one
-agents use. Second Surface makes that agent-facing interface visible, auditable,
-reviewable, executable, and self-documenting.
+Port Authority is a browser-only workbench for documenting and auditing the
+tool contracts a page exposes through WebMCP. It turns the page’s agent-facing
+surface into something a developer can inspect, redline, approve, and export.
 
-Second Surface is a browser-only workbench. Its five page tools inspect the exact
-contract registry that registered them, run deterministic checks, stage a bounded
-revision for developer review, and preview four documentation formats. A tool can
-propose a correction; only a person using the visible page can accept or reject
-it.
+An agent may inspect contracts, run deterministic checks, stage one bounded
+revision, and preview documentation. It cannot approve its own proposal. Only
+the visible human controls can grant clearance, return a revision, or reset the
+manifest.
 
-**Live judge preview:**
-[judge-demo-second-surface-webmcp-preview.mjohnson1307.workers.dev](https://judge-demo-second-surface-webmcp-preview.mjohnson1307.workers.dev/)
+**Live application:**
+[port-authority-webmcp-preview-0904a.mjohnson1307.workers.dev](https://port-authority-webmcp-preview-0904a.mjohnson1307.workers.dev/)
 
-## The golden path
-
-1. `list_tool_contracts` returns the loaded catalog, revisions, annotations, and
-   current finding counts.
-2. `get_tool_contract` returns one exact contract and visibly selects it.
-3. `audit_tool_contracts` runs static, deterministic checks and populates the
-   audit panel.
-4. `propose_contract_revision` validates a closed structured patch and stages a
-   real before/after diff. It cannot accept its own proposal.
-5. The developer accepts or rejects the staged revision in the page.
-6. A fresh audit reports the accepted registry's new state.
-7. `preview_contract_bundle` opens registration metadata, contract JSON, a
-   Markdown reference, and an OpenAPI 3.1 documentation projection generated
-   from that same accepted source.
-
-Suggested prompt:
+## The working loop
 
 ```text
-Audit the WebMCP catalog currently loaded in Second Surface. Identify only problems supported by the contract data, propose the smallest revision that makes the tools unambiguous and testable, and stage the revision in the workbench. Do not invent behavior or accept your own changes.
+ARRIVE → INSPECT → REDLINE → CLEAR → EXPORT
 ```
+
+The accepted registry starts at revision 1 with six deterministic findings.
+One is a deliberate, concrete contradiction in the documented
+`propose_contract_revision` example:
+
+```diff
+- baseRevision: "1"
++ baseRevision: 1
+```
+
+The schema requires an integer, but the seeded example supplies a string. The
+golden path is real application state, not a scripted mock:
+
+1. The agent lists the five registered tools.
+2. The agent audits the accepted manifest and receives six findings.
+3. The agent inspects `propose_contract_revision` and confirms
+   `INVALID_EXAMPLE` from declared contract data.
+4. The agent stages the smallest allowed revision: the same example array with
+   only `baseRevision` changed from `"1"` to `1`.
+5. The accepted registry remains unchanged while the revision waits in **DRY
+   DOCK**.
+6. A human reviews the exact payload and selects **GRANT CLEARANCE — Accept
+   this exact revision** or **RETURN TO SHIPPER — Reject without changing
+   registry**.
+7. After clearance, the accepted revision becomes 2, the audit count becomes
+   five, and `INVALID_EXAMPLE` disappears.
+8. **SHIP’S PAPERS** opens four synchronized projections of the accepted
+   registry.
+
+### Demo prompt
+
+```text
+Audit the loaded Port Authority manifest. List the WebMCP tools, run the deterministic contract inspection, and inspect propose_contract_revision. If the declared data confirms that its example uses a string where baseRevision requires an integer, stage the smallest bounded revision that changes "1" to 1. Do not infer runtime behavior and do not grant your own clearance.
+```
+
+After the human grants clearance:
+
+```text
+Reinspect the cleared manifest, report the remaining finding count, and open the four accepted artifact projections. Confirm whether the repaired example now matches its declared schema.
+```
+
+To reset the demo, select **RESET LOCAL CATALOG** and confirm the browser-local
+reset. Reloading the page also starts a new in-memory session.
+
+## Five registered berths
+
+| WebMCP tool | What it may do |
+| --- | --- |
+| `list_tool_contracts` | List the five accepted contracts, revisions, annotations, side-effect classes, and finding counts. |
+| `get_tool_contract` | Inspect one exact accepted contract and visibly select it in the workbench. |
+| `audit_tool_contracts` | Run deterministic checks over declared contract data and populate **CUSTOMS INSPECTION**. |
+| `propose_contract_revision` | Validate and stage one fixed-name, allowlisted metadata revision for human review. It cannot accept it. |
+| `preview_contract_bundle` | Open four projections generated from the currently accepted registry. |
+
+The tool names are fixed. Revision patches reject unknown fields, stale base
+revisions, invalid schemas, empty changes, and attempts to rename executable
+tools atomically.
 
 ## One accepted source
 
-The accepted registry in [`src/contracts/registry.ts`](./src/contracts/registry.ts)
-drives:
+[`src/contracts/registry.ts`](./src/contracts/registry.ts) is the canonical
+contract registry. That one accepted source drives:
 
-- the top-level `document.modelContext.registerTool()` metadata;
-- the human-readable workbench;
+- top-level `document.modelContext.registerTool()` metadata;
+- the visible **HARBOR MAP** and registration explorer;
 - deterministic audit findings;
-- the machine-readable contract manifest;
-- the Markdown reference;
-- the OpenAPI documentation projection; and
-- executable examples and parity tests.
+- staged before/after revisions;
+- registration metadata;
+- the canonical JSON manifest;
+- the Markdown reference; and
+- the OpenAPI 3.1 documentation chart.
 
-Output schemas, examples, recovery guidance, lifecycle notes, and privacy notes
-are Second Surface documentation extensions. The current browser registration
-surface receives only its supported registration fields. The UI labels that
-distinction directly.
+Output schemas, examples, recovery guidance, lifecycle states, prerequisites,
+privacy notes, and side-effect classifications are Port Authority documentation
+extensions. They are not presented as native `registerTool()` fields.
 
-The OpenAPI 3.1 file is a **documentation projection only**. Its synthetic paths
-are marked with `x-documentation-projection: true` and
-`x-network-endpoint: false`. It is not an HTTP API and creates no routes.
+The OpenAPI artifact is documentation only. Synthetic paths carry explicit
+`x-webmcp-*`, `x-documentation-projection: true`, and
+`x-network-endpoint: false` markers. It creates no HTTP routes or network
+endpoints.
 
-## What the audit can and cannot say
+## What the audit proves
 
-The deterministic rules report facts available in contract data, including:
+Port Authority checks only facts supported by the accepted contract data,
+including:
 
-- missing or invalid names, titles, and descriptions;
-- vague descriptions;
-- missing or open object input schemas;
-- undocumented properties and inconsistent required fields;
-- examples that do not validate against their documented schemas;
-- side-effect and read-only annotation conflicts;
-- returned developer or external content without an untrusted-content hint;
-- duplicate tool names;
-- missing recovery guidance; and
-- generated metadata or artifacts that disagree with the accepted registry.
+- missing, malformed, or vague contract fields;
+- missing, open, or internally inconsistent input schemas;
+- examples that do not validate against their declared schemas;
+- conflicts between read-only annotations and declared side effects;
+- missing untrusted-content hints for developer or external output;
+- missing recovery guidance;
+- duplicate tool names; and
+- disagreements between the accepted registry and generated projections.
 
-Static metadata cannot prove actual runtime behavior, side effects, privacy,
-security, or semantic truth. Those remain developer-review responsibilities.
+It does **not** prove runtime behavior, actual side effects, privacy, security,
+or semantic truth. Those remain developer-review responsibilities.
 
 ## Browser and trust boundary
 
-- No backend, account, database, remote API, analytics, telemetry, or cloud
-  persistence is used.
-- The audit is deterministic and calls no model or external service.
-- Structured revisions accept a fixed field allowlist and reject unknown fields
-  atomically.
-- No arbitrary code is evaluated.
-- WebMCP is progressive enhancement. In a browser without
-  `document.modelContext`, the complete visible workbench remains usable.
-- The workbench does not depend on `getTools()` or `executeTool()` support.
+- Browser-only React application.
+- No backend, database, account, authentication, remote API, analytics,
+  telemetry, or cloud persistence.
+- No arbitrary code execution.
+- No model call or external service is used by the deterministic audit.
+- Agents may inspect, audit, stage, and preview.
+- Only visible human controls may accept, reject, or reset.
+- WebMCP is progressive enhancement. The visible workbench remains usable when
+  `document.modelContext` is unavailable.
+- Runtime registration is imperative on the top-level
+  `document.modelContext`; there is no WebMCP polyfill or dependency on
+  introspection APIs.
 
 ## Run locally
 
-Node.js 22 and npm are recommended.
+Node.js 22 or newer and npm are recommended.
 
 ```bash
+git clone https://github.com/villagealchemist/permission-slip-webmcp.git
+cd permission-slip-webmcp
 npm ci
 npm run dev -- --host 127.0.0.1
 ```
+
+Open the local URL printed by Vite in a WebMCP-capable browser to exercise the
+five page tools. Other browsers receive the complete visual workbench.
 
 ## Verify
 
@@ -107,24 +157,36 @@ npm run test
 npm run build
 ```
 
-The timed 60–90 second walkthrough is in [`DEMO.md`](./DEMO.md).
+The current suite covers schema boundaries, atomic revision rejection, stable
+audit findings, runtime output contracts, WebMCP registration, human-only
+acceptance, and artifact projection consistency.
 
-Generated contract files are written under `docs/generated/`:
+Static documentation generation writes these accepted-registry files under
+`docs/generated/`:
 
 - `webmcp-contracts.json`
 - `webmcp-reference.md`
 - `openapi.json`
 
+The in-page **SHIP’S PAPERS** workbench additionally exposes live registration
+metadata, so the browser presents four accepted projections.
+
 ## Project map
 
 ```text
-src/contracts/          accepted contracts, deterministic audit, projections
-src/workbench/          shared browser-local state and human review operations
-src/webmcp/             runtime validation, tool bindings, registration lifecycle
-src/contract-explorer/  the visible Second Surface workbench
-scripts/                filesystem wrapper for deterministic documentation output
+src/contracts/          canonical registry, audit rules, revision boundary, projections
+src/workbench/          shared browser-local state and human-only decisions
+src/webmcp/             validation, fixed tool bindings, registration lifecycle
+src/contract-explorer/  visible Port Authority workbench
+scripts/                deterministic documentation generator
+docs/                   architecture, privacy, and WebMCP notes
 ```
+
+The implementation walkthrough is in [`DEMO.md`](./DEMO.md). Architectural and
+trust-boundary details are in [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md),
+[`docs/WEBMCP.md`](./docs/WEBMCP.md), and
+[`docs/PRIVACY_MODEL.md`](./docs/PRIVACY_MODEL.md).
 
 ## License
 
-[MIT](LICENSE) © 2026 Second Surface contributors
+[MIT](./LICENSE) © 2026 Village Alchemist
