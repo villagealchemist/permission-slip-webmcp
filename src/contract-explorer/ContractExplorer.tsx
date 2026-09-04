@@ -14,7 +14,10 @@ import {
 } from '../workbench'
 
 const GOLDEN_PROMPT =
-  'Audit the WebMCP catalog currently loaded in Second Surface. Identify only problems supported by the contract data, propose the smallest revision that makes the tools unambiguous and testable, and stage the revision in the workbench. Do not invent behavior or accept your own changes.'
+  'Audit the loaded Port Authority manifest. List the WebMCP tools, run the deterministic contract inspection, and inspect propose_contract_revision. If the declared data confirms that its example uses a string where baseRevision requires an integer, stage the smallest bounded revision that changes "1" to 1. Do not infer runtime behavior and do not grant your own clearance.'
+
+const FOLLOW_UP_PROMPT =
+  'Reinspect the cleared manifest, report the remaining finding count, and open the four accepted artifact projections. Confirm whether the repaired example now matches its declared schema.'
 
 const ARTIFACT_KINDS = [
   'registration',
@@ -201,6 +204,48 @@ function extensionValue(contract: ContractView, ...keys: string[]): unknown {
   return undefined
 }
 
+interface ChangedField {
+  readonly path: string
+  readonly before: unknown
+  readonly after: unknown
+}
+
+function collectChangedFields(
+  before: unknown,
+  after: unknown,
+  path = '',
+): ChangedField[] {
+  if (serialize(before) === serialize(after)) return []
+
+  if (Array.isArray(before) && Array.isArray(after)) {
+    const length = Math.max(before.length, after.length)
+    return Array.from({ length }, (_, index) =>
+      collectChangedFields(before[index], after[index], `${path}[${index}]`),
+    ).flat()
+  }
+
+  const beforeRecord = asRecord(before)
+  const afterRecord = asRecord(after)
+  if (beforeRecord && afterRecord) {
+    return [...new Set([...Object.keys(beforeRecord), ...Object.keys(afterRecord)])]
+      .sort()
+      .flatMap((key) =>
+        collectChangedFields(
+          beforeRecord[key],
+          afterRecord[key],
+          path ? `${path}.${key}` : key,
+        ),
+      )
+  }
+
+  return [{ path: path || '$', before, after }]
+}
+
+function revisionOf(value: unknown): string {
+  const revision = asRecord(value)?.revision
+  return typeof revision === 'number' ? String(revision) : '—'
+}
+
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message
   const record = asRecord(error)
@@ -209,7 +254,7 @@ function errorMessage(error: unknown): string {
 }
 
 function JsonBlock({ value }: { value: unknown }) {
-  return <pre className="json-block">{serialize(value)}</pre>
+  return <pre aria-label="JSON documentation" className="json-block" tabIndex={0}>{serialize(value)}</pre>
 }
 
 function CopyAction({ label, text }: { label: string; text: string }) {
@@ -260,13 +305,13 @@ function artifactValue(bundle: unknown, kind: ArtifactKind): unknown {
 function artifactFilename(kind: ArtifactKind): string {
   switch (kind) {
     case 'registration':
-      return 'second-surface-registration.json'
+      return 'port-authority-registration.json'
     case 'contractJson':
-      return 'second-surface-contracts.json'
+      return 'port-authority-manifest.json'
     case 'markdown':
-      return 'second-surface-reference.md'
+      return 'port-authority-deck-notes.md'
     case 'openApi':
-      return 'second-surface-openapi.json'
+      return 'port-authority-openapi-chart.json'
   }
 }
 
@@ -278,32 +323,32 @@ function webMcpCopy(status: WebMcpRegistrationStatus): {
   switch (status.phase) {
     case 'ready':
       return {
-        label: 'Agent tools ready',
-        detail: `${status.registeredToolCount} explorer tools registered from accepted revision`,
+        label: 'Agent channel open',
+        detail: `${status.registeredToolCount} berths registered from the accepted manifest`,
         tone: 'success',
       }
     case 'registering':
       return {
-        label: 'Registering agent tools',
+        label: 'Opening agent channel',
         detail: 'The visual workbench remains fully available.',
         tone: 'active',
       }
     case 'unsupported':
       return {
-        label: 'Visual workbench mode',
+        label: 'Harbor desk only',
         detail: 'This browser has no WebMCP support; catalog, audit, and artifacts still work.',
         tone: 'warning',
       }
     case 'error':
       return {
-        label: 'Visual workbench mode',
+        label: 'Harbor desk only',
         detail: status.error ?? 'Agent tools could not be registered.',
         tone: 'warning',
       }
     default:
       return {
-        label: 'Checking agent tools',
-        detail: 'Loading the accepted catalog in the browser.',
+        label: 'Checking agent channel',
+        detail: 'Loading the accepted manifest in the browser.',
         tone: 'neutral',
       }
   }
@@ -321,7 +366,7 @@ function ReferenceBlock({
   return (
     <section className={`reference-block ${extension ? 'reference-block--extension' : ''}`}>
       <header className="reference-block__heading">
-        <span>{extension ? 'Second Surface extension' : 'Native registerTool field'}</span>
+        <span>{extension ? 'Port Authority documentation' : 'Native registerTool field'}</span>
         <h3>{title}</h3>
       </header>
       <JsonBlock value={value} />
@@ -441,7 +486,7 @@ export function ContractExplorer({ store: suppliedStore }: ContractExplorerProps
   }
 
   function resetCatalog(): void {
-    if (!window.confirm('Reset the accepted Second Surface catalog in this browser?')) {
+    if (!window.confirm('Reset the accepted Port Authority manifest in this browser?')) {
       return
     }
     store.human.resetCatalog()
@@ -449,70 +494,123 @@ export function ContractExplorer({ store: suppliedStore }: ContractExplorerProps
   }
 
   const artifactText = serialize(activeArtifactValue)
+  const manifestCleared = !findings.some(
+    (finding) =>
+      finding.code === 'INVALID_EXAMPLE' &&
+      finding.toolName === 'propose_contract_revision',
+  )
+  const harborPrompt = manifestCleared ? FOLLOW_UP_PROMPT : GOLDEN_PROMPT
+  const statusLine = `${String(contracts.length).padStart(2, '0')} BERTHS / ${String(findings.length).padStart(2, '0')} FLAGS / REV ${String(snapshot.acceptedRevision).padStart(2, '0')} / ${webMcpStatus.phase === 'ready' ? 'AGENT CHANNEL OPEN' : 'HARBOR DESK ONLY'}`
+  const pendingChanges = pendingRevision
+    ? collectChangedFields(pendingRevision.before, pendingRevision.after).filter(
+        (change) => change.path !== 'revision',
+      )
+    : []
 
   return (
     <div className="workbench-shell">
-      <a className="skip-link" href="#catalog">
-        Skip to catalog
+      <a className="skip-link" href="#harbor-map">
+        Skip to harbor map
       </a>
 
       <header className="workbench-hero">
-        <nav className="top-nav" aria-label="Second Surface sections">
+        <nav className="top-nav" aria-label="Port Authority sections">
           <a className="brand-lockup" href="#top" id="top">
-            <strong>SECOND SURFACE</strong>
-            <span>The self-documenting WebMCP explorer</span>
+            <span className="brand-mark" aria-hidden="true">PA</span>
+            <span className="brand-type">
+              <strong>PORT AUTHORITY</strong>
+              <small>The harbor master for WebMCP.</small>
+            </span>
           </a>
           <div className="top-nav__links">
-            <a href="#catalog">Catalog</a>
-            <a href="#reference">Living reference</a>
-            <a href="#audit">Audit &amp; artifacts</a>
+            <a href="#harbor-map">Harbor map</a>
+            <a href="#customs">Customs</a>
+            <a href="#dry-dock">Dry dock</a>
+            <a href="#ships-papers">Ship’s papers</a>
           </div>
         </nav>
 
+        <p className="harbor-status" aria-label="Current harbor status">{statusLine}</p>
+
         <div className="hero-layout">
           <div className="hero-statement">
-            <p className="kicker">Accepted revision {String(snapshot.acceptedRevision)}</p>
-            <h1>See the interface your users’ agents see.</h1>
+            <p className="kicker">No agent docks on vibes.</p>
+            <h1>PORT<br />AUTHORITY</h1>
             <p className="hero-deck">
-              Inspect the exact registration surface, enrich it with durable documentation,
-              audit changes, and export the evidence—without hiding the human decision.
+              The harbor master for WebMCP. Inspect every declared tool contract,
+              redline a bounded repair, require human clearance, then export the papers.
             </p>
+            <div className="hero-actions">
+              <button
+                className="action action--primary"
+                disabled={busyAction !== null}
+                type="button"
+                onClick={() => {
+                  const customs = document.getElementById('customs')
+                  if (typeof customs?.scrollIntoView === 'function') {
+                    customs.scrollIntoView({ behavior: 'smooth' })
+                  }
+                  void runOperation(
+                    'audit',
+                    (signal) => store.auditToolContracts({ signal }),
+                    'Contract inspection complete.',
+                  )
+                }}
+              >
+                Inspect the manifest
+              </button>
+              <CopyAction label="Copy harbor prompt" text={harborPrompt} />
+            </div>
           </div>
 
-          <aside className="agent-console" aria-label="Agent tool status and golden prompt">
+          <aside className="agent-console" aria-label="Manifest defect and agent channel">
             <div className={`system-status system-status--${webMcp.tone}`} aria-live="polite">
               <span className="system-status__label">{webMcp.label}</span>
               <span>{webMcp.detail}</span>
             </div>
-            <div className="prompt-block">
+            <div className={`defect-signal ${manifestCleared ? 'defect-signal--cleared' : ''}`}>
               <div className="prompt-block__heading">
-                <span>Golden prompt</span>
-                <span>Human decisions stay in-page</span>
+                <span>{manifestCleared ? 'Clearance recorded' : 'Concrete defect'}</span>
+                <span>{manifestCleared ? '05 flags remain' : 'INVALID_EXAMPLE'}</span>
               </div>
-              <p>{GOLDEN_PROMPT}</p>
-              <CopyAction label="Copy prompt" text={GOLDEN_PROMPT} />
+              <code>
+                <del>baseRevision: "1"</del>
+                <span aria-hidden="true">→</span>
+                <ins>baseRevision: 1</ins>
+              </code>
+              <p>
+                {manifestCleared
+                  ? 'Accepted revision now matches the declared integer schema.'
+                  : 'One declared example contradicts its integer input schema. The agent may stage the redline; only a human may clear it.'}
+              </p>
             </div>
           </aside>
         </div>
+
+        <ol className="harbor-route" aria-label="Port Authority route">
+          {['Arrive', 'Inspect', 'Redline', 'Clear', 'Export'].map((step, index) => (
+            <li key={step}><span>{String(index + 1).padStart(2, '0')}</span>{step}</li>
+          ))}
+        </ol>
       </header>
 
       <main>
-        <section className="workbench-section catalog-section" id="catalog">
+        <section className="workbench-section catalog-section" id="harbor-map">
           <header className="section-heading">
             <div>
-              <p className="section-index">01 / Catalog</p>
-              <h2>Accepted tool contracts</h2>
+              <p className="section-index">01 / Harbor map</p>
+              <h2>Five berths. One accepted manifest.</h2>
             </div>
             <p>
-              This is the current browser-local source of truth. Selecting a row opens
-              its exact registration fields and Second Surface documentation.
+              Each berth is one registered WebMCP tool. Follow the lane from inspection
+              to a bounded redline; clearance stays with the human on the dock.
             </p>
           </header>
 
           <div className="catalog-summary" aria-label="Catalog summary">
-            <span><strong>{contracts.length}</strong> accepted tools</span>
-            <span><strong>{String(snapshot.acceptedRevision)}</strong> accepted revision</span>
-            <span><strong>{findings.length}</strong> current findings</span>
+            <span><strong>{contracts.length}</strong> occupied berths</span>
+            <span><strong>{String(snapshot.acceptedRevision)}</strong> manifest revision</span>
+            <span><strong>{findings.length}</strong> declared flags</span>
           </div>
 
           {contracts.length ? (
@@ -543,7 +641,7 @@ export function ContractExplorer({ store: suppliedStore }: ContractExplorerProps
                       </span>
                       <span className="catalog-row__summary">{contractSummary(contract)}</span>
                       <span className="catalog-row__action">
-                        {selected ? 'Open now' : 'Inspect'} <span aria-hidden="true">→</span>
+                        {selected ? 'Berth open' : 'Inspect'} <span aria-hidden="true">→</span>
                       </span>
                     </button>
                   </li>
@@ -552,8 +650,8 @@ export function ContractExplorer({ store: suppliedStore }: ContractExplorerProps
             </ol>
           ) : (
             <div className="empty-state">
-              <strong>No accepted contracts are visible yet.</strong>
-              <span>The visual catalog remains usable even when WebMCP is unavailable.</span>
+              <strong>No accepted contracts are berthed yet.</strong>
+              <span>The visible harbor desk remains usable even when WebMCP is unavailable.</span>
               <button
                 className="action action--primary"
                 disabled={busyAction !== null}
@@ -566,22 +664,22 @@ export function ContractExplorer({ store: suppliedStore }: ContractExplorerProps
                   )
                 }
               >
-                Load catalog
+                Load manifest
               </button>
             </div>
           )}
         </section>
 
-        <section className="workbench-section reference-section" id="reference">
+        <section className="workbench-section reference-section" id="registration">
           <header className="section-heading">
             <div>
-              <p className="section-index">02 / Living reference</p>
+              <p className="section-index">02 / Registration</p>
               <h2>{selectedContract ? contractTitle(selectedContract) : 'Select a tool to inspect'}</h2>
               {selectedContract ? <code className="selected-tool-name">{selectedContract.name}</code> : null}
             </div>
             <p>
-              Native registration metadata is separated from richer lifecycle and output
-              documentation so an agent-facing claim never masquerades as a browser field.
+              Live tool metadata is separated from Port Authority documentation extensions,
+              so an output schema never masquerades as a native browser field.
             </p>
           </header>
 
@@ -641,15 +739,15 @@ export function ContractExplorer({ store: suppliedStore }: ContractExplorerProps
           )}
         </section>
 
-        <section className="workbench-section audit-section" id="audit">
+        <section className="workbench-section audit-section" id="customs">
           <header className="section-heading">
             <div>
-              <p className="section-index">03 / Audit, diff &amp; artifacts</p>
-              <h2>Evidence before acceptance</h2>
+              <p className="section-index">03 / Customs inspection</p>
+              <h2>Contract audit</h2>
             </div>
-            <p>
-              Audits can propose and explain a revision. Only the visible human controls
-              below can accept or reject it.
+            <p className="scope-plate">
+              <strong>DECLARED CONTRACT DATA ONLY</strong>
+              Cannot prove runtime behavior, side effects, privacy, security, or semantic truth.
             </p>
           </header>
 
@@ -662,11 +760,11 @@ export function ContractExplorer({ store: suppliedStore }: ContractExplorerProps
                 void runOperation(
                   'audit',
                   (signal) => store.auditToolContracts({ signal }),
-                  'Audit complete.',
+                  'Contract inspection complete.',
                 )
               }
             >
-              {busyAction === 'audit' ? 'Auditing…' : 'Run catalog audit'}
+              {busyAction === 'audit' ? 'Inspecting…' : 'Inspect the manifest'}
             </button>
             <button
               className="action action--quiet"
@@ -680,7 +778,7 @@ export function ContractExplorer({ store: suppliedStore }: ContractExplorerProps
                 )
               }
             >
-              {busyAction === 'artifacts' ? 'Building preview…' : 'Preview artifact bundle'}
+              {busyAction === 'artifacts' ? 'Drafting papers…' : 'Open ship’s papers'}
             </button>
           </div>
 
@@ -688,8 +786,8 @@ export function ContractExplorer({ store: suppliedStore }: ContractExplorerProps
             <section className="audit-findings" aria-labelledby="findings-title">
               <header className="subsection-heading">
                 <div>
-                  <p className="micro-label">Audit report</p>
-                  <h3 id="findings-title">Findings</h3>
+                  <p className="micro-label">Customs inspection</p>
+                  <h3 id="findings-title">Contract audit</h3>
                 </div>
                 <span>{snapshot.auditHasRun ? `${findings.length} found` : 'Not run'}</span>
               </header>
@@ -730,13 +828,13 @@ export function ContractExplorer({ store: suppliedStore }: ContractExplorerProps
               )}
             </section>
 
-            <section className="pending-review" aria-labelledby="pending-title">
+            <section className="pending-review" id="dry-dock" aria-labelledby="pending-title">
               <header className="subsection-heading">
                 <div>
-                  <p className="micro-label">Human decision</p>
-                  <h3 id="pending-title">Pending revision</h3>
+                  <p className="micro-label">04 / Dry dock · Human decision</p>
+                  <h3 id="pending-title">Bounded redline</h3>
                 </div>
-                <span>{pendingRevision ? 'Decision required' : 'None pending'}</span>
+                <span>{pendingRevision ? 'Clearance required' : 'No ship in dry dock'}</span>
               </header>
               {pendingRevision ? (
                 <>
@@ -744,6 +842,14 @@ export function ContractExplorer({ store: suppliedStore }: ContractExplorerProps
                     <code>{pendingRevision.toolName}</code>
                     <p>{pendingRevision.rationale}</p>
                     <dl>
+                      <div>
+                        <dt>Base revision</dt>
+                        <dd>{revisionOf(pendingRevision.before)}</dd>
+                      </div>
+                      <div>
+                        <dt>Proposed revision</dt>
+                        <dd>{revisionOf(pendingRevision.after)}</dd>
+                      </div>
                       <div>
                         <dt>Current findings</dt>
                         <dd>{pendingRevision.currentFindingCount}</dd>
@@ -754,18 +860,37 @@ export function ContractExplorer({ store: suppliedStore }: ContractExplorerProps
                       </div>
                     </dl>
                   </div>
-                  <div className="diff-grid" aria-label="Pending contract diff">
-                    <div>
-                      <p className="micro-label">Before / accepted</p>
+                  <div className="diff-grid" aria-label="Exact changed fields">
+                    <p className="micro-label">Exact changed fields</p>
+                    {pendingChanges.length ? (
+                      <table className="diff-table">
+                        <thead>
+                          <tr><th>Field</th><th>Accepted</th><th>Proposed</th></tr>
+                        </thead>
+                        <tbody>
+                          {pendingChanges.map((change) => (
+                            <tr key={change.path}>
+                              <th><code>{change.path}</code></th>
+                              <td><del>{serialize(change.before)}</del></td>
+                              <td><ins>{serialize(change.after)}</ins></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    ) : (
+                      <p>No changed contract fields were detected.</p>
+                    )}
+                    <details>
+                      <summary>Full accepted contract</summary>
                       <JsonBlock value={pendingRevision.before} />
-                    </div>
-                    <div>
-                      <p className="micro-label">After / proposed</p>
+                    </details>
+                    <details>
+                      <summary>Full proposed contract</summary>
                       <JsonBlock value={pendingRevision.after} />
-                    </div>
+                    </details>
                   </div>
                   <div className="human-actions" aria-label="Human-only revision decision">
-                    <span>Only you can decide</span>
+                    <span>Human clearance only</span>
                     <button
                       className="action action--accept"
                       disabled={busyAction !== null}
@@ -778,7 +903,9 @@ export function ContractExplorer({ store: suppliedStore }: ContractExplorerProps
                         )
                       }
                     >
-                      {busyAction === 'accept' ? 'Accepting…' : 'Accept this revision'}
+                      {busyAction === 'accept' ? 'Granting…' : (
+                        <><strong>Grant clearance</strong><small>Accept this exact revision</small></>
+                      )}
                     </button>
                     <button
                       className="action action--reject"
@@ -792,29 +919,35 @@ export function ContractExplorer({ store: suppliedStore }: ContractExplorerProps
                         )
                       }
                     >
-                      {busyAction === 'reject' ? 'Rejecting…' : 'Reject this revision'}
+                      {busyAction === 'reject' ? 'Returning…' : (
+                        <><strong>Return to shipper</strong><small>Reject without changing registry</small></>
+                      )}
                     </button>
                   </div>
                 </>
               ) : (
                 <div className="empty-state">
-                  Audit proposals appear here with their real before-and-after contracts.
+                  A valid agent redline will dock here for an exact human decision.
                 </div>
               )}
             </section>
           </div>
 
-          <section className="artifact-workbench" aria-labelledby="artifact-title">
+          <section className="artifact-workbench" id="ships-papers" aria-labelledby="artifact-title">
             <header className="subsection-heading">
               <div>
-                <p className="micro-label">Generated from accepted revision</p>
-                <h3 id="artifact-title">Artifact bundle</h3>
+                <p className="micro-label">05 / Ship’s papers · Accepted source only</p>
+                <h3 id="artifact-title">Four synchronized projections</h3>
               </div>
-              <span>{snapshot.artifactBundle ? 'Preview ready' : 'No preview yet'}</span>
+              <span>
+                {snapshot.artifactBundle
+                  ? manifestCleared ? 'Cleared manifest' : 'Uncleared manifest'
+                  : 'Papers not opened'}
+              </span>
             </header>
 
             <div className="artifact-tabs" role="tablist" aria-label="Artifact formats">
-              {ARTIFACT_KINDS.map((kind) => (
+              {ARTIFACT_KINDS.map((kind, index) => (
                 <button
                   aria-controls="artifact-panel"
                   aria-selected={activeArtifact === kind}
@@ -822,14 +955,31 @@ export function ContractExplorer({ store: suppliedStore }: ContractExplorerProps
                   id={`artifact-tab-${kind}`}
                   key={kind}
                   role="tab"
+                  tabIndex={activeArtifact === kind ? 0 : -1}
                   type="button"
                   onClick={() => store.setActiveArtifact(kind)}
+                  onKeyDown={(event) => {
+                    let nextIndex: number | null = null
+                    if (event.key === 'ArrowRight') nextIndex = (index + 1) % ARTIFACT_KINDS.length
+                    if (event.key === 'ArrowLeft') nextIndex = (index - 1 + ARTIFACT_KINDS.length) % ARTIFACT_KINDS.length
+                    if (event.key === 'Home') nextIndex = 0
+                    if (event.key === 'End') nextIndex = ARTIFACT_KINDS.length - 1
+                    if (nextIndex === null) return
+                    event.preventDefault()
+                    const nextKind = ARTIFACT_KINDS[nextIndex]
+                    store.setActiveArtifact(nextKind)
+                    window.requestAnimationFrame(() =>
+                      document.getElementById(`artifact-tab-${nextKind}`)?.focus(),
+                    )
+                  }}
                 >
-                  {kind === 'contractJson'
-                    ? 'Contract JSON'
-                    : kind === 'openApi'
-                      ? 'OpenAPI'
-                      : kind[0].toUpperCase() + kind.slice(1)}
+                  {kind === 'registration'
+                    ? 'REGISTRATION'
+                    : kind === 'contractJson'
+                      ? 'MANIFEST.JSON'
+                      : kind === 'markdown'
+                        ? 'DECK NOTES.MD'
+                        : 'OPENAPI CHART'}
                 </button>
               ))}
             </div>
@@ -843,10 +993,22 @@ export function ContractExplorer({ store: suppliedStore }: ContractExplorerProps
             >
               {activeArtifactValue === undefined ? (
                 <div className="empty-state empty-state--dark">
-                  Preview the bundle to inspect this artifact without downloading it.
+                  Open the ship’s papers to inspect accepted artifacts without downloading them.
                 </div>
               ) : (
                 <>
+                  <div className="artifact-clearance">
+                    <strong>{manifestCleared ? 'CLEARED MANIFEST' : 'UNCLEARED MANIFEST'}</strong>
+                    <span>
+                      {activeArtifact === 'registration'
+                        ? 'Live tool metadata'
+                        : activeArtifact === 'contractJson'
+                          ? 'Canonical contract registry'
+                          : activeArtifact === 'markdown'
+                            ? 'Human reference'
+                            : 'DOCUMENTATION CHART. NO NETWORK ENDPOINT.'}
+                    </span>
+                  </div>
                   <div className="artifact-actions">
                     <CopyAction label="Copy artifact" text={artifactText} />
                     <button
@@ -873,8 +1035,8 @@ export function ContractExplorer({ store: suppliedStore }: ContractExplorerProps
 
           <footer className="workbench-footer">
             <p>
-              Browser-local catalog. Audits may propose; agents may inspect; only the
-              visible human interface can accept a revision.
+              <strong>MJ / open_sourceress</strong>
+              <span>Computing is a medium. This is my red pen.</span>
             </p>
             <button className="reset-action" type="button" onClick={resetCatalog}>
               Reset local catalog

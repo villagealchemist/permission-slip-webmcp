@@ -10,21 +10,19 @@ function context() {
   return { signal: new AbortController().signal }
 }
 
-describe('Second Surface workbench', () => {
+describe('Port Authority workbench', () => {
   it('shares agent operations with visible audit, staged review, acceptance, and artifacts', async () => {
     const user = userEvent.setup()
     const store = new WorkbenchStore()
     render(<ContractExplorer store={store} />)
 
     expect(
-      await screen.findByRole('heading', {
-        name: 'See the interface your users’ agents see.',
-      }),
+      await screen.findByRole('heading', { level: 1 }),
     ).toBeInTheDocument()
-    expect(await screen.findByText('Visual workbench mode')).toBeInTheDocument()
-    expect(screen.getAllByRole('button', { name: /Inspect|Open now/ })).toHaveLength(5)
+    expect(await screen.findByText('Harbor desk only')).toBeInTheDocument()
+    expect(document.querySelectorAll('.catalog-row')).toHaveLength(5)
 
-    await user.click(screen.getByRole('button', { name: 'Run catalog audit' }))
+    await user.click(screen.getAllByRole('button', { name: 'Inspect the manifest' })[0])
     expect(await screen.findByText('6 found')).toBeInTheDocument()
 
     await act(async () => {
@@ -52,19 +50,19 @@ describe('Second Surface workbench', () => {
       )
     })
 
-    expect(screen.getByText('Decision required')).toBeInTheDocument()
-    expect(screen.getByText('Only you can decide')).toBeInTheDocument()
+    expect(screen.getByText('Clearance required')).toBeInTheDocument()
+    expect(screen.getByText('Human clearance only')).toBeInTheDocument()
     await user.click(
-      screen.getByRole('button', { name: 'Accept this revision' }),
+      screen.getByRole('button', { name: /Grant clearance.*Accept this exact revision/i }),
     )
     await waitFor(() => expect(store.getSnapshot().acceptedRevision).toBe(2))
-    expect(screen.getByText('Accepted revision 2')).toBeInTheDocument()
-    expect(screen.getByText('None pending')).toBeInTheDocument()
+    expect(screen.getByLabelText('Current harbor status')).toHaveTextContent('REV 02')
+    expect(screen.getByText('No ship in dry dock')).toBeInTheDocument()
 
     await user.click(
-      screen.getByRole('button', { name: 'Preview artifact bundle' }),
+      screen.getByRole('button', { name: 'Open ship’s papers' }),
     )
-    expect(await screen.findByText('Preview ready')).toBeInTheDocument()
+    expect(await screen.findByText('Uncleared manifest')).toBeInTheDocument()
     expect(screen.getByRole('tabpanel')).toHaveTextContent('list_tool_contracts')
   })
 })
