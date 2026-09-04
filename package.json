@@ -1,5 +1,5 @@
 {
-  "name": "permission-slip-webmcp",
+  "name": "second-surface-webmcp",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -39,6 +39,7 @@
     "typescript-eslint": "^8.69.0",
     "vite": "^8.2.2",
     "vitest": "^4.1.11",
-    "webmcp-types": "^0.1.5"
+    "webmcp-types": "^0.1.5",
+    "wrangler": "^4.129.0"
   }
 }

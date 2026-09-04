@@ -1,121 +1,42 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-  PERMISSION_SLIP_TOOL_NAMES,
-  createPermissionSlipWebMcpController,
-  type PermissionSlipWebMcpAdapter,
+  SECOND_SURFACE_TOOL_CONTRACT_BY_NAME,
+  SECOND_SURFACE_TOOL_NAMES,
+} from '../contracts'
+import {
+  createSecondSurfaceWebMcpController,
+  type SecondSurfaceWebMcpAdapter,
   type WebMcpRegistrationTarget,
 } from './index'
 
-const validDraft = {
-  contactName: 'Maya Chen',
-  email: 'maya.chen@example.com',
-  eventType: 'Creative coding and mentorship workshop',
-  preferredDate: '2026-10-10',
-  estimatedAttendeeCount: 20,
-  eventGoal:
-    'Pair early-career developers with local mentors for a collaborative workshop',
+function acceptedContracts() {
+  return SECOND_SURFACE_TOOL_NAMES.map(
+    (name) => SECOND_SURFACE_TOOL_CONTRACT_BY_NAME[name],
+  )
 }
 
-function createAdapter(): PermissionSlipWebMcpAdapter {
+function ok(operation: string) {
+  return { ok: true, data: { operation } } as const
+}
+
+function createAdapter(): SecondSurfaceWebMcpAdapter {
   return {
-    getIntakeRequirements: vi.fn<
-      PermissionSlipWebMcpAdapter['getIntakeRequirements']
-    >(() => ({
-      ok: true,
-      data: {
-        requiredFields: [
-          'contactName',
-          'email',
-          'eventType',
-          'preferredDate',
-          'estimatedAttendeeCount',
-          'eventGoal',
-        ],
-        optionalFields: [
-          'phone',
-          'budgetRange',
-          'socialHandle',
-          'additionalNotes',
-        ],
-        authorizedOptionalFields: [],
-        neverCollectedFields: ['payment information'],
-        workflowStatus: 'empty',
-        instructions: 'Draft, review, then wait for human approval.',
-      },
-    })),
-    draftIntake: vi.fn<PermissionSlipWebMcpAdapter['draftIntake']>(() => ({
-      ok: true,
-      data: {
-        acceptedFields: [
-          'contactName',
-          'email',
-          'eventType',
-          'preferredDate',
-          'estimatedAttendeeCount',
-          'eventGoal',
-        ],
-        withheldFields: [
-          'phone',
-          'budgetRange',
-          'socialHandle',
-          'additionalNotes',
-        ],
-        workflowStatus: 'draft',
-        nextRecommendedAction: 'Prepare a review.',
-      },
-    })),
-    prepareSubmissionReview: vi.fn<
-      PermissionSlipWebMcpAdapter['prepareSubmissionReview']
-    >(() => ({
-      ok: true,
-      data: {
-        reviewId: 'review-1',
-        digest: 'abc123',
-        reviewSummary: {
-          fieldsDisclosed: validDraft,
-          optionalFieldsWithheld: [
-            'phone',
-            'budgetRange',
-            'socialHandle',
-            'additionalNotes',
-          ],
-        },
-        humanApprovalRequired: 'Approve this exact review in the webpage.',
-      },
-    })),
-    submitApprovedIntake: vi.fn<
-      PermissionSlipWebMcpAdapter['submitApprovedIntake']
-    >(() => ({
-      ok: true,
-      data: {
-        confirmation: 'The approved intake was finalized locally.',
-        receiptId: 'receipt-1',
-        reviewId: 'review-1',
-        workflowStatus: 'submitted',
-      },
-    })),
-    getDisclosureReceipt: vi.fn<
-      PermissionSlipWebMcpAdapter['getDisclosureReceipt']
-    >(() => ({
-      ok: true,
-      data: {
-        receiptId: 'receipt-1',
-        reviewId: 'review-1',
-        submissionTimestamp: '2026-09-03T16:00:00.000Z',
-        fieldsDisclosed: validDraft,
-        optionalFieldsWithheld: [
-          'phone',
-          'budgetRange',
-          'socialHandle',
-          'additionalNotes',
-        ],
-        neverCollectedCategories: ['payment information'],
-        snapshotDigest: 'abc123',
-        destination: 'Local demonstration only',
-        networkTransmissionOccurred: false,
-        statement: 'No network transmission occurred.',
-      },
-    })),
+    getAcceptedContracts: vi.fn(acceptedContracts),
+    listToolContracts: vi.fn<
+      SecondSurfaceWebMcpAdapter['listToolContracts']
+    >(() => ok('list')),
+    getToolContract: vi.fn<SecondSurfaceWebMcpAdapter['getToolContract']>(
+      () => ok('get'),
+    ),
+    auditToolContracts: vi.fn<
+      SecondSurfaceWebMcpAdapter['auditToolContracts']
+    >(() => ok('audit')),
+    proposeContractRevision: vi.fn<
+      SecondSurfaceWebMcpAdapter['proposeContractRevision']
+    >(() => ok('propose')),
+    previewContractBundle: vi.fn<
+      SecondSurfaceWebMcpAdapter['previewContractBundle']
+    >(() => ok('preview')),
   }
 }
 
@@ -132,11 +53,11 @@ function createRegistrationTarget() {
   return { registrations, target }
 }
 
-describe('Permission Slip WebMCP registration', () => {
-  it('registers exactly five narrow tools and cleans them up with one signal', async () => {
+describe('Second Surface WebMCP registration', () => {
+  it('registers the exact accepted five in canonical order and cleans them up with one signal', async () => {
     const adapter = createAdapter()
     const { registrations, target } = createRegistrationTarget()
-    const controller = createPermissionSlipWebMcpController({
+    const controller = createSecondSurfaceWebMcpController({
       getAdapter: () => adapter,
       modelContext: target,
     })
@@ -148,25 +69,22 @@ describe('Permission Slip WebMCP registration', () => {
     })
 
     expect(registrations.map(({ tool }) => tool.name)).toEqual(
-      PERMISSION_SLIP_TOOL_NAMES,
+      SECOND_SURFACE_TOOL_NAMES,
     )
-    expect(
-      registrations.every(
-        ({ tool }) =>
-          (tool.inputSchema as { additionalProperties?: boolean })
-            .additionalProperties === false,
-      ),
-    ).toBe(true)
-    expect(
-      registrations
-        .filter(({ tool }) => tool.annotations?.readOnlyHint)
-        .map(({ tool }) => tool.name),
-    ).toEqual(['get_intake_requirements', 'get_disclosure_receipt'])
-    expect(
-      registrations
-        .filter(({ tool }) => tool.annotations?.untrustedContentHint)
-        .map(({ tool }) => tool.name),
-    ).toEqual(['prepare_submission_review', 'get_disclosure_receipt'])
+    registrations.forEach(({ tool }, index) => {
+      const contract = acceptedContracts()[index]
+      expect(tool).toMatchObject({
+        name: contract.name,
+        title: contract.title,
+        description: contract.description,
+        annotations: contract.annotations,
+      })
+      expect(tool.inputSchema).toBe(contract.inputSchema)
+      expect(
+        (tool.inputSchema as { additionalProperties?: boolean })
+          .additionalProperties,
+      ).toBe(false)
+    })
 
     const signals = registrations.map(({ options }) => options?.signal)
     expect(signals.every((signal) => signal === signals[0])).toBe(true)
@@ -182,7 +100,7 @@ describe('Permission Slip WebMCP registration', () => {
 
   it('falls back without registering when document.modelContext is unavailable', async () => {
     const adapter = createAdapter()
-    const controller = createPermissionSlipWebMcpController({
+    const controller = createSecondSurfaceWebMcpController({
       getAdapter: () => adapter,
       modelContext: null,
     })
@@ -194,22 +112,36 @@ describe('Permission Slip WebMCP registration', () => {
     })
   })
 
-  it('rejects malformed draft input before calling the application adapter', async () => {
+  it('rejects unknown proposal properties at every structured level without invoking the adapter', async () => {
     const adapter = createAdapter()
     const { registrations, target } = createRegistrationTarget()
-    const controller = createPermissionSlipWebMcpController({
+    const controller = createSecondSurfaceWebMcpController({
       getAdapter: () => adapter,
       modelContext: target,
     })
     await controller.start()
 
-    const draftTool = registrations.find(
-      ({ tool }) => tool.name === 'draft_intake',
+    const proposalTool = registrations.find(
+      ({ tool }) => tool.name === 'propose_contract_revision',
     )?.tool
-    expect(draftTool).toBeDefined()
+    expect(proposalTool).toBeDefined()
 
-    const result = await draftTool?.execute(
-      { ...validDraft, preferredDate: '2026-02-30', secret: 'not allowed' },
+    const result = await proposalTool?.execute(
+      {
+        toolName: 'get_tool_contract',
+        baseRevision: 1,
+        rationale: 'Clarify the lookup contract.',
+        changes: {
+          annotations: { readOnlyHint: true, hiddenAuthority: true },
+          privacy: {
+            outputSource: 'system',
+            note: 'Returns accepted contract metadata.',
+            telemetry: true,
+          },
+          inventedBehavior: 'publish the revision',
+        },
+        bypassHumanReview: true,
+      },
       { signal: new AbortController().signal },
     )
 
@@ -221,51 +153,50 @@ describe('Permission Slip WebMCP registration', () => {
         details: {
           issues: expect.arrayContaining([
             expect.objectContaining({
-              path: 'secret',
+              path: 'bypassHumanReview',
               code: 'unknown_property',
             }),
             expect.objectContaining({
-              path: 'preferredDate',
-              code: 'invalid_format',
+              path: 'changes.inventedBehavior',
+              code: 'unknown_property',
+            }),
+            expect.objectContaining({
+              path: 'changes.annotations.hiddenAuthority',
+              code: 'unknown_property',
+            }),
+            expect.objectContaining({
+              path: 'changes.privacy.telemetry',
+              code: 'unknown_property',
             }),
           ]),
         },
       },
     })
-    expect(adapter.draftIntake).not.toHaveBeenCalled()
+    expect(adapter.proposeContractRevision).not.toHaveBeenCalled()
   })
 
-  it('rejects identifiers with whitespace rather than silently normalizing them', async () => {
+  it('rejects a lookup outside the exact five-tool enum', async () => {
     const adapter = createAdapter()
     const { registrations, target } = createRegistrationTarget()
-    const controller = createPermissionSlipWebMcpController({
+    const controller = createSecondSurfaceWebMcpController({
       getAdapter: () => adapter,
       modelContext: target,
     })
     await controller.start()
 
-    const submitTool = registrations.find(
-      ({ tool }) => tool.name === 'submit_approved_intake',
+    const lookupTool = registrations.find(
+      ({ tool }) => tool.name === 'get_tool_contract',
     )?.tool
-    const receiptTool = registrations.find(
-      ({ tool }) => tool.name === 'get_disclosure_receipt',
-    )?.tool
-    const options = { signal: new AbortController().signal }
+    const result = await lookupTool?.execute(
+      { toolName: 'publish_contract_bundle' },
+      { signal: new AbortController().signal },
+    )
 
-    await expect(
-      submitTool?.execute({ reviewId: ' review-1 ' }, options),
-    ).resolves.toMatchObject({
+    expect(result).toMatchObject({
       ok: false,
       error: { code: 'INVALID_INPUT' },
     })
-    await expect(
-      receiptTool?.execute({ receiptId: ' receipt-1 ' }, options),
-    ).resolves.toMatchObject({
-      ok: false,
-      error: { code: 'INVALID_INPUT' },
-    })
-    expect(adapter.submitApprovedIntake).not.toHaveBeenCalled()
-    expect(adapter.getDisclosureReceipt).not.toHaveBeenCalled()
+    expect(adapter.getToolContract).not.toHaveBeenCalled()
   })
 
   it('resolves the live adapter and forwards the invocation AbortSignal', async () => {
@@ -273,48 +204,47 @@ describe('Permission Slip WebMCP registration', () => {
     const currentAdapter = createAdapter()
     let liveAdapter = firstAdapter
     const { registrations, target } = createRegistrationTarget()
-    const controller = createPermissionSlipWebMcpController({
+    const controller = createSecondSurfaceWebMcpController({
       getAdapter: () => liveAdapter,
       modelContext: target,
     })
     await controller.start()
     liveAdapter = currentAdapter
 
-    const draftTool = registrations.find(
-      ({ tool }) => tool.name === 'draft_intake',
+    const lookupTool = registrations.find(
+      ({ tool }) => tool.name === 'get_tool_contract',
     )?.tool
     const invocationController = new AbortController()
-    await draftTool?.execute(validDraft, {
-      signal: invocationController.signal,
-    })
+    await lookupTool?.execute(
+      { toolName: 'audit_tool_contracts' },
+      { signal: invocationController.signal },
+    )
 
-    expect(firstAdapter.draftIntake).not.toHaveBeenCalled()
-    expect(currentAdapter.draftIntake).toHaveBeenCalledWith(validDraft, {
-      signal: invocationController.signal,
-    })
+    expect(firstAdapter.getToolContract).not.toHaveBeenCalled()
+    expect(currentAdapter.getToolContract).toHaveBeenCalledWith(
+      { toolName: 'audit_tool_contracts' },
+      { signal: invocationController.signal },
+    )
   })
 
   it('supports experimental builds that omit invocation options', async () => {
     const adapter = createAdapter()
     const { registrations, target } = createRegistrationTarget()
-    const controller = createPermissionSlipWebMcpController({
+    const controller = createSecondSurfaceWebMcpController({
       getAdapter: () => adapter,
       modelContext: target,
     })
     await controller.start()
 
-    const draftTool = registrations.find(
-      ({ tool }) => tool.name === 'draft_intake',
+    const listTool = registrations.find(
+      ({ tool }) => tool.name === 'list_tool_contracts',
     )?.tool
-    expect(draftTool).toBeDefined()
-
-    const invokeWithoutOptions = draftTool?.execute as (
+    const invokeWithoutOptions = listTool?.execute as (
       input: unknown,
     ) => Promise<unknown>
-    await expect(invokeWithoutOptions(validDraft)).resolves.toMatchObject({
-      ok: true,
-    })
-    expect(adapter.draftIntake).toHaveBeenCalledWith(validDraft, {
+
+    await expect(invokeWithoutOptions({})).resolves.toMatchObject({ ok: true })
+    expect(adapter.listToolContracts).toHaveBeenCalledWith({
       signal: expect.any(AbortSignal),
     })
   })
@@ -324,12 +254,12 @@ describe('Permission Slip WebMCP registration', () => {
     const target: WebMcpRegistrationTarget = {
       registerTool: vi.fn(async (tool, options) => {
         if (options?.signal) registrationSignals.push(options.signal)
-        if (tool.name === 'prepare_submission_review') {
+        if (tool.name === 'audit_tool_contracts') {
           throw new Error('registration rejected')
         }
       }),
     }
-    const controller = createPermissionSlipWebMcpController({
+    const controller = createSecondSurfaceWebMcpController({
       getAdapter: createAdapter,
       modelContext: target,
     })

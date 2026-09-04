@@ -2,8 +2,7 @@
   "$schema": "https://typedoc.org/schema.json",
   "entryPoints": [
     "src/contracts/index.ts",
-    "src/domain/index.ts",
-    "src/store/index.ts",
+    "src/workbench/index.ts",
     "src/webmcp/index.ts"
   ],
   "entryPointStrategy": "expand",

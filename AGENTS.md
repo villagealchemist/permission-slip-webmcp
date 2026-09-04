@@ -1,12 +1,14 @@
-# Permission Slip delivery guide
+# Second Surface delivery guide
 
-- Deadline: September 3, 2026 at 4:00 PM Eastern. Favor a complete, demonstrable vertical slice.
-- Keep the project browser-only: no backend, database, authentication, remote API, analytics, or telemetry.
-- Never use real personal information. The supplied Maya Chen details are fictional demo data.
-- Keep domain rules in `src/domain`, state/persistence in `src/store`, WebMCP adapters in `src/webmcp`, and presentation in React components.
-- The human UI and WebMCP handlers must call the same domain operations and share one store.
-- Preserve the approval invariant: only the visible human UI can approve; any pre-submission edit invalidates the review and approval.
-- WebMCP is progressive enhancement. Register imperatively on top-level `document.modelContext`; do not add a runtime polyfill.
-- Do not stop after scaffolding. Before delivery, run `npm run typecheck`, `npm run lint`, `npm run test`, and `npm run build`.
-- Never claim the digest proves identity or that localStorage is tamper-proof. Submission is simulated and sends no network request.
+- Keep the product browser-only: no backend, database, authentication, remote API, analytics, telemetry, or arbitrary code execution.
+- Second Surface is narrowly about documenting and auditing WebMCP page tools. Keep every claim inside that product boundary.
+- One accepted contract registry must drive runtime `document.modelContext.registerTool()` metadata, the visible explorer, deterministic findings, generated JSON, Markdown, and the OpenAPI documentation projection.
+- The five registered workbench tools are `list_tool_contracts`, `get_tool_contract`, `audit_tool_contracts`, `propose_contract_revision`, and `preview_contract_bundle`.
+- Agent tools may inspect, audit, stage a bounded revision, and preview artifacts. Only visible human controls may accept or reject a staged revision or reset the catalog.
+- Reject unknown patch fields and invalid schemas atomically. Never infer or invent behavioral semantics.
+- Treat output schemas and richer lifecycle metadata as Second Surface documentation extensions; do not imply that every field is passed to `registerTool()`.
+- The OpenAPI 3.1 artifact is documentation-only. Preserve explicit `x-webmcp-*`, `x-documentation-projection: true`, and `x-network-endpoint: false` markers and never describe synthetic paths as HTTP endpoints.
+- Static audit findings describe contract data only. They cannot prove runtime behavior, side effects, privacy, security, or semantic truth.
+- WebMCP is progressive enhancement. Register imperatively on the top-level `document.modelContext`; do not add a runtime polyfill or depend on tool-introspection APIs.
+- Before delivery run documentation generation, typecheck, lint, tests, production build, browser smoke tests, and a confidentiality/leak scan.
 - Do not push, deploy, or change external services without explicit authorization.

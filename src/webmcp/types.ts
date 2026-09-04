@@ -1,61 +1,31 @@
 import {
-  NEVER_COLLECTED_DEFINITIONS,
-  OPTIONAL_FIELD_NAMES,
-  REQUIRED_FIELD_NAMES,
-  type DisclosureSnapshot,
-  type IntakeFieldName,
-  type OptionalFieldName,
-  type RequiredFieldName,
-  type WorkflowStatus as DomainWorkflowStatus,
-} from '../domain'
-import type { ContractErrorCode } from '../contracts/defineContract'
+  SECOND_SURFACE_TOOL_NAMES,
+  type ContractRevisionPatch,
+  type WorkbenchToolContract,
+} from '../contracts'
 
-/** Stable required-field names in the external tool contract. */
-export const REQUIRED_INTAKE_FIELDS = REQUIRED_FIELD_NAMES
+/** Exact names exposed by the Second Surface browser workbench. */
+export type SecondSurfaceToolName =
+  (typeof SECOND_SURFACE_TOOL_NAMES)[number]
 
-/** Stable optional-field names that remain subject to live human authorization. */
-export const OPTIONAL_INTAKE_FIELDS = OPTIONAL_FIELD_NAMES
-
-/** Human-readable collection exclusions returned to tool callers. */
-export const NEVER_COLLECTED_FIELDS = Object.freeze(
-  NEVER_COLLECTED_DEFINITIONS.map((definition) =>
-    definition.label.toLowerCase(),
-  ),
-)
-
-/** Required input names exposed through WebMCP. */
-export type RequiredIntakeField = RequiredFieldName
-/** Consent-gated input names exposed through WebMCP. */
-export type OptionalIntakeField = OptionalFieldName
-/** Every accepted WebMCP intake property. */
-export type IntakeField = IntakeFieldName
-
-/** Tool-facing alias of the authoritative domain workflow lifecycle. */
-export type WorkflowStatus = DomainWorkflowStatus
-
-/** JSON-only boundary prevents tool results from leaking browser-specific objects. */
+/** JSON-only boundary prevents tool results from leaking browser objects. */
 export type JsonPrimitive = string | number | boolean | null
-/** Recursive value accepted in structured tool error details. */
-export type JsonValue = JsonPrimitive | JsonObject | JsonValue[]
+/** Recursive value accepted in structured tool results and error details. */
+export type JsonValue = JsonPrimitive | JsonObject | readonly JsonValue[]
 /** Structured JSON object accepted by the WebMCP result contract. */
 export interface JsonObject {
   [key: string]: JsonValue
 }
 
-/** Complete draft proposal; runtime policy still decides which optionals are allowed. */
-export type DraftIntakeInput = DisclosureSnapshot
-
-/** Submission binds to the exact review previously returned to the caller. */
-export interface SubmitApprovedIntakeInput {
-  reviewId: string
+/** Closed lookup input for one accepted workbench tool contract. */
+export interface GetToolContractInput {
+  toolName: SecondSurfaceToolName
 }
 
-/** Omitted receipt ID intentionally means “latest local receipt.” */
-export interface GetDisclosureReceiptInput {
-  receiptId?: string
-}
+/** Bounded revision proposal accepted by the staging tool. */
+export type ProposeContractRevisionInput = ContractRevisionPatch
 
-/** Per-invocation cancellation propagated into asynchronous store operations. */
+/** Per-invocation cancellation propagated into application operations. */
 export interface ToolExecutionContext {
   signal: AbortSignal
 }
@@ -64,7 +34,7 @@ export interface ToolExecutionContext {
 export interface ToolFailure {
   ok: false
   error: {
-    code: ContractErrorCode
+    code: string
     message: string
     retryable: boolean
     details?: JsonObject
@@ -77,95 +47,43 @@ export interface ToolSuccess<T> {
   data: T
 }
 
-/** Discriminated result that keeps expected policy rejections out of exceptions. */
+/** Discriminated result that keeps expected rejections out of exceptions. */
 export type ToolResult<T> = ToolSuccess<T> | ToolFailure
 
-/** Live collection policy returned before an agent constructs a draft. */
-export interface IntakeRequirementsOutput {
-  requiredFields: RequiredIntakeField[]
-  optionalFields: OptionalIntakeField[]
-  authorizedOptionalFields: OptionalIntakeField[]
-  neverCollectedFields: string[]
-  workflowStatus: WorkflowStatus
-  instructions: string
-}
-
-/** Agent draft result that explicitly identifies data withheld from disclosure. */
-export interface DraftIntakeOutput {
-  acceptedFields: IntakeField[]
-  withheldFields: OptionalIntakeField[]
-  workflowStatus: 'draft'
-  nextRecommendedAction: string
-}
-
-/** Exact values presented to the human and the optional categories omitted. */
-export interface SubmissionReviewSummary {
-  fieldsDisclosed: DisclosureSnapshot
-  optionalFieldsWithheld: OptionalIntakeField[]
-}
-
-/** Review binding plus an explicit reminder that approval remains human-only. */
-export interface PrepareSubmissionReviewOutput {
-  reviewId: string
-  digest: string
-  reviewSummary: SubmissionReviewSummary
-  humanApprovalRequired: string
-}
-
-/** Confirmation of local simulated submission, linked to its receipt. */
-export interface SubmitApprovedIntakeOutput {
-  confirmation: string
-  receiptId: string
-  reviewId: string
-  workflowStatus: 'submitted'
-}
-
-/**
- * Portable record of the local simulation. `networkTransmissionOccurred` is a
- * behavior statement, not an identity or tamper-resistance guarantee.
- */
-export interface DisclosureReceiptOutput {
-  receiptId: string
-  reviewId: string
-  submissionTimestamp: string
-  fieldsDisclosed: DisclosureSnapshot
-  optionalFieldsWithheld: OptionalIntakeField[]
-  neverCollectedCategories: string[]
-  snapshotDigest: string
-  destination: 'Local demonstration only'
-  networkTransmissionOccurred: false
-  statement: string
-}
-
-/** Allows adapters to keep read operations synchronous without constraining async work. */
+/** Allows adapters to keep pure reads synchronous without constraining writes. */
 export type MaybePromise<T> = T | Promise<T>
 
+/** JSON-safe data envelope returned by the workbench adapter methods. */
+export type SecondSurfaceToolData = JsonObject
+
 /**
- * The application-facing boundary for WebMCP. Implementations should call the
- * same live store/domain operations as the visible UI; they must not cache a
- * snapshot of state when the tools are registered.
+ * Application-facing boundary for Second Surface WebMCP tools. Registration
+ * metadata comes from the accepted canonical contracts at factory creation,
+ * while every invocation resolves this adapter again to reach live state.
  */
-export interface PermissionSlipWebMcpAdapter {
-  getIntakeRequirements(
+export interface SecondSurfaceWebMcpAdapter {
+  getAcceptedContracts(): readonly WorkbenchToolContract[]
+  listToolContracts(
     context: ToolExecutionContext,
-  ): MaybePromise<ToolResult<IntakeRequirementsOutput>>
-  draftIntake(
-    input: DraftIntakeInput,
+  ): MaybePromise<ToolResult<SecondSurfaceToolData>>
+  getToolContract(
+    input: GetToolContractInput,
     context: ToolExecutionContext,
-  ): MaybePromise<ToolResult<DraftIntakeOutput>>
-  prepareSubmissionReview(
+  ): MaybePromise<ToolResult<SecondSurfaceToolData>>
+  auditToolContracts(
     context: ToolExecutionContext,
-  ): MaybePromise<ToolResult<PrepareSubmissionReviewOutput>>
-  submitApprovedIntake(
-    input: SubmitApprovedIntakeInput,
+  ): MaybePromise<ToolResult<SecondSurfaceToolData>>
+  proposeContractRevision(
+    input: ProposeContractRevisionInput,
     context: ToolExecutionContext,
-  ): MaybePromise<ToolResult<SubmitApprovedIntakeOutput>>
-  getDisclosureReceipt(
-    input: GetDisclosureReceiptInput,
+  ): MaybePromise<ToolResult<SecondSurfaceToolData>>
+  previewContractBundle(
     context: ToolExecutionContext,
-  ): MaybePromise<ToolResult<DisclosureReceiptOutput>>
+  ): MaybePromise<ToolResult<SecondSurfaceToolData>>
 }
 
-/** Resolves the adapter at invocation time so tools always reach the live store. */
-export type PermissionSlipWebMcpAdapterProvider =
-  () => PermissionSlipWebMcpAdapter
+/** Resolves the adapter at invocation time so tools always reach live state. */
+export type SecondSurfaceWebMcpAdapterProvider =
+  () => SecondSurfaceWebMcpAdapter
+
+export type { ContractRevisionPatch, WorkbenchToolContract }

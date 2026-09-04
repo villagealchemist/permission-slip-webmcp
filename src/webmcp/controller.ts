@@ -1,5 +1,5 @@
-import { createPermissionSlipTools } from './tools'
-import type { PermissionSlipWebMcpAdapterProvider } from './types'
+import { createSecondSurfaceTools } from './tools'
+import type { SecondSurfaceWebMcpAdapterProvider } from './types'
 
 /** Injectable subset of `document.modelContext` used for progressive enhancement. */
 export interface WebMcpRegistrationTarget {
@@ -30,15 +30,15 @@ export interface WebMcpRegistrationStatus {
  * Idempotent registration lifecycle. Stopping invalidates in-flight work and
  * aborts registrations created by the current run.
  */
-export interface PermissionSlipWebMcpController {
+export interface SecondSurfaceWebMcpController {
   start(): Promise<WebMcpRegistrationStatus>
   stop(): void
   getStatus(): WebMcpRegistrationStatus
 }
 
 /** Dependencies and status observer for a registration controller instance. */
-export interface CreatePermissionSlipWebMcpControllerOptions {
-  getAdapter: PermissionSlipWebMcpAdapterProvider
+export interface CreateSecondSurfaceWebMcpControllerOptions {
+  getAdapter: SecondSurfaceWebMcpAdapterProvider
   /** Pass null to force the unsupported path. Omit to use document.modelContext. */
   modelContext?: WebMcpRegistrationTarget | null
   onStatusChange?: (status: WebMcpRegistrationStatus) => void
@@ -59,10 +59,10 @@ function registrationErrorMessage(error: unknown): string {
  * available. Readiness is reported only after every registration resolves;
  * unsupported browsers remain fully functional through the visible UI.
  */
-export function createPermissionSlipWebMcpController(
-  options: CreatePermissionSlipWebMcpControllerOptions,
-): PermissionSlipWebMcpController {
-  const tools = createPermissionSlipTools(options.getAdapter)
+export function createSecondSurfaceWebMcpController(
+  options: CreateSecondSurfaceWebMcpControllerOptions,
+): SecondSurfaceWebMcpController {
+  const tools = createSecondSurfaceTools(options.getAdapter)
   let status: WebMcpRegistrationStatus = {
     phase: 'idle',
     supported: false,

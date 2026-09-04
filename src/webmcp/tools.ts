@@ -1,25 +1,28 @@
 import {
-  WEBMCP_TOOL_CONTRACT_BY_NAME,
-  PERMISSION_SLIP_TOOL_NAMES,
-  type PermissionSlipToolName,
-  type ToolContract,
+  SECOND_SURFACE_TOOL_CONTRACT_BY_NAME,
+  SECOND_SURFACE_TOOL_NAMES,
+  type WorkbenchToolContract,
 } from '../contracts'
 import type {
-  PermissionSlipWebMcpAdapter,
-  PermissionSlipWebMcpAdapterProvider,
+  GetToolContractInput,
+  JsonObject,
+  ProposeContractRevisionInput,
+  SecondSurfaceToolData,
+  SecondSurfaceToolName,
+  SecondSurfaceWebMcpAdapter,
+  SecondSurfaceWebMcpAdapterProvider,
   ToolFailure,
   ToolResult,
 } from './types'
 import {
   invalidInputFailure,
-  validateDraftIntake,
   validateEmptyObject,
-  validateGetDisclosureReceipt,
-  validateSubmitApprovedIntake,
+  validateGetToolContract,
+  validateProposeContractRevision,
   type ValidationResult,
 } from './validation'
 
-export { PERMISSION_SLIP_TOOL_NAMES, type PermissionSlipToolName }
+export { SECOND_SURFACE_TOOL_NAMES, type SecondSurfaceToolName }
 
 type Validator<T> = (input: unknown) => ValidationResult<T>
 
@@ -35,7 +38,7 @@ function executionFailure(): ToolFailure {
     error: {
       code: 'TOOL_EXECUTION_FAILED',
       message:
-        'The operation could not be completed. The application state was not intentionally changed; inspect the visible workflow and retry if appropriate.',
+        'The operation could not be completed. The accepted contract catalog was not intentionally changed; inspect the visible workbench and retry if appropriate.',
       retryable: true,
     },
   }
@@ -47,7 +50,7 @@ function invalidResultFailure(): ToolFailure {
     error: {
       code: 'INVALID_TOOL_RESULT',
       message:
-        'The application produced a result that could not be represented as JSON.',
+        'The workbench produced a result that could not be represented as JSON.',
       retryable: false,
     },
   }
@@ -62,28 +65,27 @@ function isJsonSerializable(value: unknown): boolean {
 }
 
 function executeValidated<TInput, TOutput>(
-  getAdapter: PermissionSlipWebMcpAdapterProvider,
+  getAdapter: SecondSurfaceWebMcpAdapterProvider,
   validate: Validator<TInput>,
   invoke: (
-    adapter: PermissionSlipWebMcpAdapter,
+    adapter: SecondSurfaceWebMcpAdapter,
     input: TInput,
     signal: AbortSignal,
   ) => Promise<ToolResult<TOutput>> | ToolResult<TOutput>,
 ): WebMCP.ToolExecuteCallback {
   return async (input, executionOptions) => {
-    // Some current WebMCP-enabled builds omit the draft API's second callback
+    // Some WebMCP-enabled builds omit the experimental callback's second
     // argument. Preserve cancellation when supplied and remain compatible with
-    // those builds while the browser surface is still experimental.
-    const signal =
-      executionOptions?.signal ?? new AbortController().signal
+    // those builds without adding a runtime polyfill.
+    const signal = executionOptions?.signal ?? new AbortController().signal
     throwIfAborted(signal)
 
     const validation = validate(input)
     if (!validation.ok) return invalidInputFailure(validation.issues)
 
     try {
-      // Resolve the adapter for every invocation so registered callbacks always
-      // operate on the current store rather than a registration-time snapshot.
+      // Resolve the adapter for every invocation so callbacks always operate on
+      // the current accepted catalog and staged proposal state.
       const result = await invoke(getAdapter(), validation.value, signal)
       throwIfAborted(signal)
       return isJsonSerializable(result) ? result : invalidResultFailure()
@@ -95,11 +97,11 @@ function executeValidated<TInput, TOutput>(
 }
 
 function registerContract<TInput, TOutput>(
-  contract: ToolContract<PermissionSlipToolName>,
-  getAdapter: PermissionSlipWebMcpAdapterProvider,
+  contract: WorkbenchToolContract,
+  getAdapter: SecondSurfaceWebMcpAdapterProvider,
   validate: Validator<TInput>,
   invoke: (
-    adapter: PermissionSlipWebMcpAdapter,
+    adapter: SecondSurfaceWebMcpAdapter,
     input: TInput,
     signal: AbortSignal,
   ) => Promise<ToolResult<TOutput>> | ToolResult<TOutput>,
@@ -114,57 +116,92 @@ function registerContract<TInput, TOutput>(
   }
 }
 
+function acceptedContractsAtFactoryCreation(
+  getAdapter: SecondSurfaceWebMcpAdapterProvider,
+): readonly WorkbenchToolContract[] {
+  const acceptedContracts = getAdapter().getAcceptedContracts()
+  const expectedNames = SECOND_SURFACE_TOOL_NAMES.map(
+    (name) => SECOND_SURFACE_TOOL_CONTRACT_BY_NAME[name].name,
+  )
+  const byName = new Map<string, WorkbenchToolContract>()
+
+  for (const contract of acceptedContracts) {
+    if (!expectedNames.includes(contract.name as SecondSurfaceToolName)) {
+      throw new Error(`Unknown accepted Second Surface contract: ${contract.name}`)
+    }
+    if (byName.has(contract.name)) {
+      throw new Error(`Duplicate accepted Second Surface contract: ${contract.name}`)
+    }
+    byName.set(contract.name, contract)
+  }
+
+  if (byName.size !== expectedNames.length) {
+    throw new Error('The accepted Second Surface registry must contain exactly five tools.')
+  }
+
+  return expectedNames.map((name) => {
+    const contract = byName.get(name)
+    if (!contract) {
+      throw new Error(`Missing accepted Second Surface contract: ${name}`)
+    }
+    return contract
+  })
+}
+
 /**
- * Projects the canonical registry into native browser registrations and binds
- * each definition to the existing validated live-store executor. Output schemas
- * remain documentation metadata because the current registration type accepts
- * only an input schema.
+ * Projects the accepted canonical registry into five native browser
+ * registrations. Registration metadata is captured at factory creation; each
+ * executor still resolves the live adapter at invocation time.
  */
-export function createPermissionSlipTools(
-  getAdapter: PermissionSlipWebMcpAdapterProvider,
+export function createSecondSurfaceTools(
+  getAdapter: SecondSurfaceWebMcpAdapterProvider,
 ): readonly WebMCP.ModelContextTool[] {
-  const getIntakeRequirements = registerContract(
-    WEBMCP_TOOL_CONTRACT_BY_NAME.get_intake_requirements,
-    getAdapter,
-    validateEmptyObject,
-    (adapter, _input, signal) => adapter.getIntakeRequirements({ signal }),
-  )
+  const contracts = acceptedContractsAtFactoryCreation(getAdapter)
 
-  const draftIntake = registerContract(
-    WEBMCP_TOOL_CONTRACT_BY_NAME.draft_intake,
-    getAdapter,
-    validateDraftIntake,
-    (adapter, input, signal) => adapter.draftIntake(input, { signal }),
-  )
-
-  const prepareSubmissionReview = registerContract(
-    WEBMCP_TOOL_CONTRACT_BY_NAME.prepare_submission_review,
-    getAdapter,
-    validateEmptyObject,
-    (adapter, _input, signal) => adapter.prepareSubmissionReview({ signal }),
-  )
-
-  const submitApprovedIntake = registerContract(
-    WEBMCP_TOOL_CONTRACT_BY_NAME.submit_approved_intake,
-    getAdapter,
-    validateSubmitApprovedIntake,
-    (adapter, input, signal) =>
-      adapter.submitApprovedIntake(input, { signal }),
-  )
-
-  const getDisclosureReceipt = registerContract(
-    WEBMCP_TOOL_CONTRACT_BY_NAME.get_disclosure_receipt,
-    getAdapter,
-    validateGetDisclosureReceipt,
-    (adapter, input, signal) =>
-      adapter.getDisclosureReceipt(input, { signal }),
-  )
-
-  return [
-    getIntakeRequirements,
-    draftIntake,
-    prepareSubmissionReview,
-    submitApprovedIntake,
-    getDisclosureReceipt,
-  ]
+  return contracts.map((contract) => {
+    switch (contract.name) {
+      case 'list_tool_contracts':
+        return registerContract<JsonObject, SecondSurfaceToolData>(
+          contract,
+          getAdapter,
+          validateEmptyObject,
+          (adapter, _input, signal) => adapter.listToolContracts({ signal }),
+        )
+      case 'get_tool_contract':
+        return registerContract<GetToolContractInput, SecondSurfaceToolData>(
+          contract,
+          getAdapter,
+          validateGetToolContract,
+          (adapter, input, signal) =>
+            adapter.getToolContract(input, { signal }),
+        )
+      case 'audit_tool_contracts':
+        return registerContract<JsonObject, SecondSurfaceToolData>(
+          contract,
+          getAdapter,
+          validateEmptyObject,
+          (adapter, _input, signal) => adapter.auditToolContracts({ signal }),
+        )
+      case 'propose_contract_revision':
+        return registerContract<
+          ProposeContractRevisionInput,
+          SecondSurfaceToolData
+        >(
+          contract,
+          getAdapter,
+          validateProposeContractRevision,
+          (adapter, input, signal) =>
+            adapter.proposeContractRevision(input, { signal }),
+        )
+      case 'preview_contract_bundle':
+        return registerContract<JsonObject, SecondSurfaceToolData>(
+          contract,
+          getAdapter,
+          validateEmptyObject,
+          (adapter, _input, signal) => adapter.previewContractBundle({ signal }),
+        )
+      default:
+        throw new Error(`No executor is bound for ${String(contract.name)}.`)
+    }
+  })
 }

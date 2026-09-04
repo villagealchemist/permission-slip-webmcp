@@ -1,316 +1,130 @@
-# Permission Slip
+# Second Surface
 
-> Let the agent help. Keep the final say.
+> The self-documenting WebMCP explorer.
 
-Permission Slip is a browser-only WebMCP demonstration of informed delegation. An
-agent can inspect an intake form, draft an inquiry in the same interface a person
-sees, and prepare an exact disclosure for review. Only the person can approve that
-review. Submission succeeds only while the approved snapshot is unchanged.
+Every WebMCP-enabled website has two interfaces: the one people see and the one
+agents use. Second Surface makes that agent-facing interface visible, auditable,
+reviewable, executable, and self-documenting.
 
-The demo uses a fictional community-workshop inquiry and simulated local
-submission. It has no backend, and its Submit action sends no intake data from the
-page to a server. Never use real personal information in this prototype.
+Second Surface is a browser-only workbench. Its five page tools inspect the exact
+contract registry that registered them, run deterministic checks, stage a bounded
+revision for developer review, and preview four documentation formats. A tool can
+propose a correction; only a person using the visible page can accept or reject
+it.
 
-## Why this exists
+**Live judge preview:**
+[judge-demo-second-surface-webmcp-preview.mjohnson1307.workers.dev](https://judge-demo-second-surface-webmcp-preview.mjohnson1307.workers.dev/)
 
-Most agent-enabled forms optimize for completion. Permission Slip optimizes for
-informed delegation.
+## The golden path
 
-A conventional form leaves two awkward choices: make the person enter everything
-manually, or let an agent act without a precise, visible boundary around what it
-will disclose. Permission Slip demonstrates a third pattern:
+1. `list_tool_contracts` returns the loaded catalog, revisions, annotations, and
+   current finding counts.
+2. `get_tool_contract` returns one exact contract and visibly selects it.
+3. `audit_tool_contracts` runs static, deterministic checks and populates the
+   audit panel.
+4. `propose_contract_revision` validates a closed structured patch and stages a
+   real before/after diff. It cannot accept its own proposal.
+5. The developer accepts or rejects the staged revision in the page.
+6. A fresh audit reports the accepted registry's new state.
+7. `preview_contract_bundle` opens registration metadata, contract JSON, a
+   Markdown reference, and an OpenAPI 3.1 documentation projection generated
+   from that same accepted source.
 
-1. The site publishes narrow, structured tools.
-2. The agent drafts into the live human interface.
-3. The site freezes the exact proposed disclosure and computes its SHA-256 digest.
-4. The person approves that snapshot in the page.
-5. The agent may submit only the still-matching approved snapshot.
-6. The site produces a receipt showing what was disclosed and withheld.
-
-## The consent model
-
-The application has five workflow states:
-
-| State | Meaning |
-| --- | --- |
-| `empty` | No draft has been created. |
-| `draft` | The intake is being edited and has no current review. |
-| `review_pending` | A frozen disclosure snapshot is waiting for human approval. |
-| `approved` | The human approved that exact review and digest. |
-| `submitted` | The approved snapshot was saved locally and a receipt was created. |
-
-The important invariants are shared by the ordinary UI and the WebMCP handlers:
-
-- Creating a review freezes a canonical snapshot and assigns a unique `reviewId`.
-- Approval applies only to that `reviewId`, snapshot digest, and draft revision.
-- Editing a field or changing an optional-disclosure permission invalidates an
-  outstanding review or approval.
-- The approval control is visible in the webpage and is not a WebMCP tool.
-- An unauthorized optional field rejects the entire agent draft; no partial update
-  is applied.
-- Submission checks the review, approval, current draft, and digest again before
-  writing a receipt.
-- Failed operations return structured explanations that tell the agent how to
-  recover.
-
-Optional fields are `phone`, `budget range`, `social handle`, and `additional
-notes`. Each has a human-controlled disclosure toggle. The agent can use an
-optional value only after its toggle is enabled; it cannot change those
-permissions through WebMCP.
-
-Street addresses, employers, precise live location, payment information, and
-unrelated private conversation history are deliberately outside the data model.
-
-### Honest security boundary
-
-Permission Slip is a consent-pattern demonstration, not an identity or security
-system. A digest detects a changed snapshot; it does not prove who clicked Approve.
-`localStorage`, page JavaScript, and browser developer tools are not tamper-proof.
-The lack of an approval WebMCP tool is an intentional interface boundary, not a
-claim that general-purpose browser automation can never activate a visible control.
-
-## WebMCP tools
-
-The top-level page registers five tools through the imperative
-`document.modelContext.registerTool()` API:
-
-Their externally meaningful metadata, input and result schemas, examples, error
-codes, state transitions, human prerequisites, and privacy notes live in the
-canonical [`src/contracts`](./src/contracts) registry. Browser registration and
-the static [Contract Explorer](./docs.html) both project that same source.
-
-| Tool | Mode | Contract |
-| --- | --- | --- |
-| `get_intake_requirements` | Read | Returns required, optional, authorized, and never-collected fields plus workflow status and approval guidance. |
-| `draft_intake` | Write | Atomically validates and writes a complete proposed draft to the visible form. Unauthorized optional or unknown fields reject the whole operation. |
-| `prepare_submission_review` | Write | Validates the draft, freezes the exact disclosure, creates a `reviewId` and SHA-256 digest, and moves the page to human review. |
-| `submit_approved_intake` | Write | Accepts a `reviewId` and performs a local simulated submission only after matching human approval and freshness checks pass. |
-| `get_disclosure_receipt` | Read | Returns a requested receipt or the latest one, including disclosed fields, withheld optional fields, digest, time, and local-only destination. |
-
-The two read operations use the WebMCP `readOnlyHint`. Every input schema is
-narrow, documents its fields, and sets `additionalProperties: false`. Handlers
-also validate at runtime because a schema declaration is not an authorization
-boundary. Calls return either `{ "ok": true, "data": { ... } }` or a structured
-`{ "ok": false, "error": { "code", "message", "retryable", "details" } }`
-result so an agent can distinguish a correctable rejection from success.
-Tools that return human-authored intake values also set `untrustedContentHint`.
-
-When WebMCP is unavailable, the same page remains usable as an ordinary form.
-There is no runtime polyfill.
-
-## Local-only data promise
-
-Only the normal loading of the hosted HTML, CSS, and JavaScript assets uses the
-network. Permission Slip makes no application-initiated request when drafting,
-reviewing, approving, submitting, reading a receipt, or resetting the demo.
-
-- Drafts, reviews, approvals, activity, and receipts stay in versioned
-  `localStorage` for the current browser origin.
-- Open tabs synchronize before operations and on browser storage events so one
-  tab cannot finalize an approval made stale by an edit in another tab.
-- Activity entries record actors, outcomes, and field names rather than copying raw
-  intake values into the timeline.
-- If browser storage is unavailable, the workflow safely continues in memory for
-  the current page session, but it will not survive a reload.
-- “Submit” is explicitly simulated and writes locally.
-- There is no backend, database, account, authentication, analytics, telemetry,
-  email, payment flow, or OpenAI API call.
-- Reset removes the locally persisted demo state.
-
-Use the supplied fictional Maya Chen scenario rather than real information.
-
-This promise describes Permission Slip's own application and simulated submission
-path. If you use ChatGPT or another browser agent, that service may process chat
-messages, tool inputs, and tool results under its own terms and privacy policy.
-
-## Architecture
-
-The implementation keeps business rules independent of React and gives the human
-interface and WebMCP adapters one source of truth.
+Suggested prompt:
 
 ```text
-src/
-├── components/      # Human-visible workflow and presentation
-├── contract-explorer/ # Static, human-readable contract reference
-├── contracts/       # Canonical WebMCP metadata, schemas, examples, and errors
-├── domain/          # Types, validation, canonical snapshots, digest, state engine
-├── store/           # Versioned local persistence and React subscription bridge
-├── webmcp/          # Runtime validation, adapters, and registration lifecycle
-├── test/            # Shared browser-test setup
-├── App.tsx          # One-page experience
-└── main.tsx         # Top-level application entry
+Audit the WebMCP catalog currently loaded in Second Surface. Identify only problems supported by the contract data, propose the smallest revision that makes the tools unambiguous and testable, and stage the revision in the workbench. Do not invent behavior or accept your own changes.
 ```
 
-Domain operations compute and validate a complete next state before the store
-commits it. Registered tool callbacks read from the current store rather than from
-a captured React render, avoiding stale state. An `AbortController` owns the
-registration lifecycle so hot reloads and teardown do not leave duplicate tools.
+## One accepted source
 
-## Developer documentation
+The accepted registry in [`src/contracts/registry.ts`](./src/contracts/registry.ts)
+drives:
 
-- [Contract Explorer](./docs.html) — polished static reference for all five
-  tools, human-only capabilities, workflow, disclosure model, failures, and
-  architecture. It is emitted as `dist/docs.html` by the normal build.
-- [Architecture](./docs/ARCHITECTURE.md) — dependency flow, state machine,
-  disclosure boundary, and ownership decisions.
-- [WebMCP guide](./docs/WEBMCP.md) — registration lifecycle, tool behavior,
-  errors, progressive enhancement, and compatibility notes.
-- [Privacy model](./docs/PRIVACY_MODEL.md) — collection classes, persistence,
-  threat boundaries, and the exact meaning of “no network transmission.”
+- the top-level `document.modelContext.registerTool()` metadata;
+- the human-readable workbench;
+- deterministic audit findings;
+- the machine-readable contract manifest;
+- the Markdown reference;
+- the OpenAPI documentation projection; and
+- executable examples and parity tests.
 
-Run `npm run docs` to generate API reference HTML plus two deterministic
-machine-readable projections under `docs/generated/`. The following local links
-resolve after that command:
+Output schemas, examples, recovery guidance, lifecycle notes, and privacy notes
+are Second Surface documentation extensions. The current browser registration
+surface receives only its supported registration fields. The UI labels that
+distinction directly.
 
-- [`webmcp-contracts.json`](./docs/generated/webmcp-contracts.json) contains the
-  complete canonical registry projection.
-- [`openapi.json`](./docs/generated/openapi.json) is an OpenAPI 3.1
-  **documentation projection only**. Its paths
-  are synthetic, carry `x-network-endpoint: false`, and do not create or imply
-  HTTP routes.
+The OpenAPI 3.1 file is a **documentation projection only**. Its synthetic paths
+are marked with `x-documentation-projection: true` and
+`x-network-endpoint: false`. It is not an HTTP API and creates no routes.
 
-Generated documentation is intentionally ignored by Git; regenerate it from the
-reviewed TypeScript registry whenever needed. The existing hand-written boundary
-and domain validators remain defense-in-depth. The registry is the canonical
-externally published contract, while the validators enforce it and add
-authorization, normalization, and state checks at runtime.
+## What the audit can and cannot say
+
+The deterministic rules report facts available in contract data, including:
+
+- missing or invalid names, titles, and descriptions;
+- vague descriptions;
+- missing or open object input schemas;
+- undocumented properties and inconsistent required fields;
+- examples that do not validate against their documented schemas;
+- side-effect and read-only annotation conflicts;
+- returned developer or external content without an untrusted-content hint;
+- duplicate tool names;
+- missing recovery guidance; and
+- generated metadata or artifacts that disagree with the accepted registry.
+
+Static metadata cannot prove actual runtime behavior, side effects, privacy,
+security, or semantic truth. Those remain developer-review responsibilities.
+
+## Browser and trust boundary
+
+- No backend, account, database, remote API, analytics, telemetry, or cloud
+  persistence is used.
+- The audit is deterministic and calls no model or external service.
+- Structured revisions accept a fixed field allowlist and reject unknown fields
+  atomically.
+- No arbitrary code is evaluated.
+- WebMCP is progressive enhancement. In a browser without
+  `document.modelContext`, the complete visible workbench remains usable.
+- The workbench does not depend on `getTools()` or `executeTool()` support.
 
 ## Run locally
 
-Node.js 22 and npm are recommended; CI uses Node.js 22.
+Node.js 22 and npm are recommended.
 
 ```bash
 npm ci
-npm run dev
-```
-
-Open the URL Vite prints. To bind explicitly for a local in-app-browser test:
-
-```bash
 npm run dev -- --host 127.0.0.1
 ```
 
-Then open `http://127.0.0.1:5173/`.
+## Verify
 
-### Commands
-
-| Command | Purpose |
-| --- | --- |
-| `npm run dev` | Start the Vite development server. |
-| `npm run docs` | Generate contract JSON, the OpenAPI documentation projection, and TypeDoc API HTML. |
-| `npm run typecheck` | Run the strict TypeScript project build without pretty output. |
-| `npm run lint` | Run ESLint across the repository. |
-| `npm run test` | Run the Vitest suite once. |
-| `npm run test:watch` | Run Vitest in watch mode. |
-| `npm run build` | Type-check and create the production bundle in `dist/`. |
-| `npm run preview` | Serve the production bundle locally for a final smoke test. |
-
-## Test with ChatGPT site tools
-
-At the time of the WebMCP Challenge, official OpenAI documentation says site tools
-work in the latest ChatGPT desktop app with GPT-5.6 Sol or GPT-5.6 Terra. GPT-5.6
-Luna currently has WebMCP disabled, and site tools are not available in Enterprise
-or Edu workspaces. Availability also depends on rollout.
-
-1. Run the app locally as above, or deploy the static build to HTTPS.
-2. In the latest ChatGPT desktop app, select GPT-5.6 Sol or GPT-5.6 Terra.
-3. Open the app URL in ChatGPT's built-in browser.
-4. Select **Site tools** in the browser address bar, then **Available site tools**.
-5. Confirm that all five tool names listed above are present.
-6. Copy the fictional prompt below into the chat beside the open page.
-
-```text
-Help me prepare an inquiry for a 20-person creative coding and mentorship workshop on October 10, 2026. The goal is to pair early-career developers with local mentors for a collaborative workshop. My name is Maya Chen and my email is maya.chen@example.com. My phone is 215-555-0134, but use only information the site says is required or currently authorized. Prepare the inquiry for my review, but do not submit it until I approve the exact disclosure in the page.
+```bash
+npm run docs:contracts
+npm run typecheck
+npm run lint
+npm run test
+npm run build
 ```
 
-7. Confirm the agent calls `get_intake_requirements` and drafts into the visible
-   form. Phone begins unauthorized. If the first draft includes it, the expected
-   result is an atomic rejection followed by a retry without phone.
-8. Have the agent call `prepare_submission_review`. Confirm that the page shows the
-   exact disclosed and withheld fields, a `reviewId`, and a digest.
-9. Before approving, explicitly ask the agent to call `submit_approved_intake` with
-   that review ID to test the gate. It must return a structured approval-required
-   failure and leave state unchanged.
-10. Choose **Return to editing**, change one field, and confirm the old review ID
-    can no longer be submitted. Prepare a fresh review for the changed draft.
-11. Click **Approve this exact disclosure** yourself in the webpage.
-12. Ask the agent to submit the newly approved review and retrieve the disclosure
-    receipt.
-13. Confirm the receipt says **Local demonstration only**, lists phone as withheld,
-    and states that the simulated submission caused no network transmission.
+The timed 60–90 second walkthrough is in [`DEMO.md`](./DEMO.md).
 
-ChatGPT's built-in browser currently supports only part of the proposed WebMCP
-standard. Permission Slip therefore uses imperative JavaScript registration in the
-top-level page, not declarative form attributes or iframe registration.
+Generated contract files are written under `docs/generated/`:
 
-### Local compatibility probe
+- `webmcp-contracts.json`
+- `webmcp-reference.md`
+- `openapi.json`
 
-On September 3, 2026, the local app was opened in ChatGPT's in-app browser. The
-browser discovered all five registered tools, and a complete tool-driven flow
-passed: unauthorized phone rejection, compliant draft, frozen review,
-pre-approval submission rejection, visible human approval, submission, and receipt
-retrieval. That browser build omitted the draft specification's optional invocation
-context argument, so Permission Slip supplies an inert fallback signal when it is
-absent while preserving real cancellation signals when provided.
+## Project map
 
-Chrome DevTools Protocol network traces around successful simulated submissions
-from both development and final production-preview builds recorded zero
-`Network.requestWillBeSent` events. A second check must still be run against the
-final deployed HTTPS origin because browser builds and hosting headers can differ.
-
-The challenge rules also permit Chrome 149 or later with
-`chrome://flags/#enable-webmcp-testing` enabled and the browser restarted. The
-ChatGPT path above is the primary end-to-end agent test because it includes a
-compatible agent as well as the browser API.
-
-### Ordinary-browser fallback
-
-Open the app in a browser without `document.modelContext`. The support indicator
-should explain that WebMCP is unavailable, while the form, review, human approval,
-local submission, receipt, and reset workflow remain usable:
-
-1. Leave every optional-disclosure toggle off and complete the six required Maya
-   Chen fields.
-2. Click **Prepare exact review** and confirm that required fields appear under
-   Required information while all four optional fields appear under Withheld.
-3. Choose **Return to editing**, change a field, and prepare a new review. Confirm
-   that it has a new review ID and digest.
-4. Click **Approve this exact disclosure**, then **Complete local submission**.
-5. Confirm the receipt matches the frozen review and says **Local demonstration
-   only**.
-6. Copy the receipt JSON, reload the page to verify persistence, then use the
-   human-only **Reset local demo** control and confirm the demo returns to `empty`.
-
-## Deploy the static build
-
-No deployment is performed by this repository. Any static HTTPS host can serve the
-app:
-
-1. Run `npm ci`.
-2. Run `npm run typecheck`, `npm run lint`, `npm run test`, and `npm run build`.
-3. Configure the host's build command as `npm run build` and publish directory as
-   `dist` using Node.js 22.
-4. Deploy without authentication so challenge judges can open the live URL.
-5. Open the production URL directly and after a reload.
-6. Repeat the five-tool ChatGPT test above against the deployed origin.
-7. In browser developer tools, confirm the simulated submission produces no
-   network request.
-
-Keep the deployed app available through the challenge judging period.
-
-## Demo media
-
-- **Product screenshot:** `[ADD FINAL DEPLOYED SCREENSHOT]`
-- **Public demo video:** `[ADD PUBLIC YOUTUBE URL]`
-
-## References
-
-- [OpenAI: Site tools (WebMCP)](https://learn.chatgpt.com/docs/webmcp)
-- [WebMCP draft specification](https://webmachinelearning.github.io/webmcp/)
-- [WebMCP repository and TypeScript types guidance](https://github.com/webmachinelearning/webmcp)
-- [OpenAI WebMCP Challenge](https://openai.com/webmcp-challenge/)
-- [Challenge requirements and rules](https://webmcp.devpost.com/rules)
+```text
+src/contracts/          accepted contracts, deterministic audit, projections
+src/workbench/          shared browser-local state and human review operations
+src/webmcp/             runtime validation, tool bindings, registration lifecycle
+src/contract-explorer/  the visible Second Surface workbench
+scripts/                filesystem wrapper for deterministic documentation output
+```
 
 ## License
 
-[MIT](LICENSE) © 2026 Village Alchemist
+[MIT](LICENSE) © 2026 Second Surface contributors
